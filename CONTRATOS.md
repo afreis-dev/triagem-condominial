@@ -114,3 +114,83 @@ Em todos, `fonte` é `regras`.
 | teste asdf | normal | a confirmar* | a confirmar* | não reconhecida, revisar | false | null |
 
 \* A confirmar com o PO. O texto do motivo das regras vem da lista de palavras-chave do PO, então o das linhas 1 e 2 é ilustrativo.
+
+## registrarDecisao(dados)
+
+Python: `backend/lib/registrar_decisao.py` → `registrar_decisao(dados)`. História H14.
+
+Rascunho feito a partir da H14 e do plano da Sprint 1. Conferir com o `contrato-registrarDecisao.md` antes da aprovação.
+
+Grava um registro no histórico da ocorrência. Toda decisão passa por aqui: entrada, confirmação ou mudança de prioridade, ação, conclusão e aprovação em lote. A aprovação em lote chama a função uma vez por ocorrência.
+
+### Entrada
+
+Campos de todos os tipos:
+
+| Campo | Tipo | Regra |
+|---|---|---|
+| tipo | texto | `entrada`, `prioridade_confirmada`, `prioridade_alterada`, `acao`, `conclusao` ou `aprovacao_lote` |
+| ocorrenciaId | número | Ocorrência que recebeu a decisão |
+| quemDecidiu | texto | `sistema` ou `sindico` |
+
+Campos de cada tipo:
+
+| Tipo | Quando | Obrigatórios | Opcionais |
+|---|---|---|---|
+| entrada | A ocorrência é gravada | origem, prioridadeSugerida | |
+| prioridade_confirmada | O síndico confirma a prioridade | prioridadeSugerida, prioridadeFinal | |
+| prioridade_alterada | O síndico muda a prioridade | prioridadeSugerida, prioridadeFinal, motivo | |
+| acao | O síndico escolhe delegar, agendar ou eu mesmo cuido | acao. Mais responsavel se `delegar`, dataAgendada se `agendar` | nota |
+| conclusao | O síndico conclui | | |
+| aprovacao_lote | O síndico aprova em lote | prioridadeFinal, responsavel | |
+
+Valores:
+
+| Campo | Valores permitidos |
+|---|---|
+| origem | Os mesmos de `salvarOcorrencia` |
+| prioridadeSugerida, prioridadeFinal | `urgente`, `alta`, `normal`, `baixa` |
+| acao | `delegar`, `agendar`, `eu_mesmo`. Em `eu_mesmo` o responsável é gravado como `sindico` |
+| responsavel | `zelador`, `portaria`, `sindico` |
+| dataAgendada | `AAAA-MM-DD` |
+| motivo, nota | Texto livre |
+
+Campos que o servidor preenche, e que não devem ser enviados:
+
+| Campo | Valor |
+|---|---|
+| dataHora | Horário do servidor no momento do registro |
+| rebaixouTravada | `true` em `prioridade_alterada` quando a ocorrência é travada (H06) e a prioridade final fica abaixo de `urgente`. Nos outros casos, `false` |
+
+### Saída
+
+Sucesso:
+
+```json
+{ "ok": true, "registroId": 7, "dataHora": "2026-11-18T14:10:00+00:00" }
+```
+
+`dataHora` é texto ISO 8601 com fuso. Erro, com um item por campo inválido e a chave igual ao nome do campo:
+
+```json
+{ "ok": false, "erros": { "motivo": "Informe o motivo da mudança" } }
+```
+
+### Mensagens de erro
+
+| Campo | Quando | Mensagem |
+|---|---|---|
+| tipo | vazio | Informe o tipo de registro |
+| tipo | fora da lista | Tipo de registro inválido |
+| ocorrenciaId | vazio ou não existe | Ocorrência não encontrada |
+| quemDecidiu | vazio ou fora da lista | Informe quem decidiu |
+| origem | vazia ou fora da lista, em `entrada` | Origem inválida |
+| prioridadeSugerida, prioridadeFinal | vazia ou fora da lista | Prioridade inválida |
+| motivo | vazio em `prioridade_alterada` | Informe o motivo da mudança |
+| acao | vazia ou fora da lista | Escolha a ação |
+| responsavel | vazio em `delegar` e em `aprovacao_lote` | Escolha o responsável |
+| dataAgendada | vazia em `agendar` | Escolha a data do agendamento |
+
+### Registro não muda
+
+Um registro nunca é alterado nem apagado. Correção vira um novo registro. A função só insere, e a tabela `registros_decisao` recusa UPDATE e DELETE por gatilho no banco, então a regra vale também para chamada direta ao banco.
