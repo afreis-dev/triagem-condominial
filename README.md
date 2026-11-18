@@ -59,20 +59,22 @@ Variáveis de ambiente, como a `DATABASE_URL`, ficam num `.env` local. O `.env` 
 
 ## Como trabalhamos
 
-- `main`: só versões aprovadas. Ninguém envia alteração direto para ela.
+- `main`: só versões aprovadas.
 - `develop`: branch de integração, onde o time trabalha.
-- Cada tarefa vai numa branch criada a partir da `develop`, com nome como `feature/formulario` ou `docs/readme`.
-- O pull request é aberto para a `develop`, não para a `main`.
-- Quando uma tela estiver funcionando, a `develop` vai para a `main` por pull request.
+- Ninguém envia alteração direto para a `main` nem para a `develop`. Tudo entra por pull request.
 - Commits no formato `tipo: o que mudou (SQU-00)`, com `feat`, `fix`, `docs` ou `chore`.
 
-## Como pedir revisão de um pull request
+## Da tarefa ao pull request
 
-1. Envie a branch: `git push -u origin feature/minha-tarefa`.
-2. Abra o pull request para a `develop`: `gh pr create --base develop`, ou pelo botão do GitHub.
-3. Escreva o que mudou e coloque o código da issue do Linear.
-4. Em Reviewers, peça a revisão da Cinthia (`cinthiamartins-nr`).
-5. Faça o merge só depois da aprovação. Depois dele, atualize sua branch com `git pull origin develop`.
+1. Atribua a tarefa a você no Linear e mova para "In Progress".
+2. Crie uma branch a partir da `develop`, com nome como `feature/formulario` ou `docs/readme`: `git checkout develop`, `git pull` e `git checkout -b feature/minha-tarefa`.
+3. Desenvolva e suba a branch no GitHub: `git push -u origin feature/minha-tarefa`.
+4. Abra o pull request para a `develop`: `gh pr create --base develop`, ou pelo botão do GitHub. Escreva o que mudou e coloque o código da issue do Linear.
+5. Mova a tarefa para "In Review" no Linear.
+
+## Revisão e merge
+
+A revisão dos pull requests e o merge na `develop` ficam só com os mentores do bootcamp. Quem abre o pull request não dá merge. Depois que um mentor mergear, atualize sua branch com `git pull origin develop`.
 
 ## Contratos
 
