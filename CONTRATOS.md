@@ -137,7 +137,7 @@ Campos de cada tipo:
 
 | Tipo | Quando | Obrigatórios | Opcionais |
 |---|---|---|---|
-| entrada | A ocorrência é gravada | origem, prioridadeSugerida | |
+| entrada | A ocorrência é gravada | origem | prioridadeSugerida. Fica vazia se a classificação falhou |
 | prioridade_confirmada | O síndico confirma a prioridade | prioridadeSugerida, prioridadeFinal | |
 | prioridade_alterada | O síndico muda a prioridade | prioridadeSugerida, prioridadeFinal, motivo | |
 | acao | O síndico escolhe delegar, agendar ou eu mesmo cuido | acao. Mais responsavel se `delegar`, dataAgendada se `agendar` | nota |
@@ -185,7 +185,7 @@ Sucesso:
 | ocorrenciaId | vazio ou não existe | Ocorrência não encontrada |
 | quemDecidiu | vazio ou fora da lista | Informe quem decidiu |
 | origem | vazia ou fora da lista, em `entrada` | Origem inválida |
-| prioridadeSugerida, prioridadeFinal | vazia ou fora da lista | Prioridade inválida |
+| prioridadeSugerida, prioridadeFinal | vazia ou fora da lista. Em `entrada`, só se fora da lista | Prioridade inválida |
 | motivo | vazio em `prioridade_alterada` | Informe o motivo da mudança |
 | acao | vazia ou fora da lista | Escolha a ação |
 | responsavel | vazio em `delegar` e em `aprovacao_lote` | Escolha o responsável |
