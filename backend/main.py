@@ -131,25 +131,6 @@ def classificar(texto: str):
 
     return melhor
 
-    if melhor is None:
-        melhor = {
-            "prioridade": "normal",
-            "categoria": "nao_reconhecida",
-            "responsavel": "sindico",
-            "motivo": "não reconhecida, revisar"
-        }
-
-    for palavra, categoria, motivo in PALAVRAS_RISCO:
-        if normalizar(palavra) in t:
-            return {
-                "prioridade": "urgente",
-                "categoria": categoria,
-                "responsavel": "sindico",
-                "motivo": motivo
-            }
-
-    return melhor
-
 @app.post("/ocorrencias/colar")
 def colar_mensagem(dados: ColarMensagemRequest):
     resultado = classificar(dados.texto_colado)
@@ -186,3 +167,66 @@ def colar_mensagem(dados: ColarMensagemRequest):
         "motivo": resultado["motivo"],
         "origem": "WhatsApp, registrada pelo síndico"
     }
+
+@app.get("/ocorrencias")
+def listar_ocorrencias():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, texto_original, condominio_id, prioridade, categoria,
+               responsavel_sugerido, motivo, origem, status, created_at
+        FROM ocorrencias
+        ORDER BY
+          CASE prioridade
+            WHEN 'urgente' THEN 0
+            WHEN 'alta' THEN 1
+            WHEN 'normal' THEN 2
+            WHEN 'baixa' THEN 3
+            ELSE 4
+          END,
+          created_at ASC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "id": str(r[0]),
+            "titulo": r[1],
+            "condominio_id": r[2],
+            "prioridade": r[3],
+            "categoria": r[4],
+            "responsavel": r[5],
+            "motivo": r[6],
+            "origem": r[7],
+            "status": r[8],
+            "created_at": str(r[9]),
+        }
+        for r in rows
+    ]
+
+@app.patch("/ocorrencias/{id}/concluir")
+def concluir_ocorrencia(id: str):
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT status FROM ocorrencias WHERE id = %s", (id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return {"erro": "Ocorrência não encontrada"}, 404
+
+    # Só pode concluir a partir de Em andamento
+    if row[0] != "Em andamento":
+        conn.close()
+        return {"erro": "Só dá pra concluir quem está Em andamento"}, 400
+
+    # 3. Vira Fechado
+    cur.execute(
+        "UPDATE ocorrencias SET status = 'Fechado' WHERE id = %s RETURNING id, status",
+        (id,)
+    )
+    atualizado = cur.fetchone()
+    conn.commit()
+    conn.close()
+
+    return {"id": str(atualizado[0]), "status": atualizado[1]}
