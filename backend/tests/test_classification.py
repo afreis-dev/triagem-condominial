@@ -98,3 +98,46 @@ def test_nao_reconhecida():
 
 def test_maiuscula_e_acentos():
     check("LÂMPADA DO CORREDOR QUEIMOU!!!", "normal", "manutencao", "zelador")
+
+
+def test_trava_todas_palavras_risco():
+    # Uma frase com cada palavra de risco - Urgente
+    casos = [
+        ("tem gás vazando", "gás"),
+        ("cheiro de gás no bloco B", "gás"),
+        ("tem fogo no subsolo", "fogo"),
+        ("incêndio no salão", "incêndio"),
+        ("fumaça no corredor", "fumaça"),
+        ("tem gente preso no elevador", "preso no elevador"),
+        ("alagamento no subsolo", "alagamento"),
+        ("desabamento no muro", "desabamento"),
+        ("trinca na estrutura do prédio", "trinca na estrutura"),
+        ("leveei um choque na tomada", "choque"),
+        ("fio exposto no hall", "fio exposto"),
+        ("agressão no hall", "agressão"),
+    ]
+    for texto, palavra_esperada in casos:
+        r = classificar(texto)
+        assert r["prioridade"] == "urgente", f"Falhou em: {texto}"
+        assert r["travada"] == True
+
+def test_trava_maiuscula_pontuacao():
+    r = classificar("FUMAÇA no corredor!!!")
+    assert r["prioridade"] == "urgente"
+    assert r["travada"] == True
+
+def test_trava_mais_de_uma_palavra():
+    r = classificar("tem gente preso no elevador")
+    assert r["prioridade"] == "urgente"
+    assert r["palavraDeRisco"] == "preso no elevador"
+
+def test_sem_risco_nao_vira_urgente():
+    r = classificar("lâmpada do hall queimou")
+    assert r["prioridade"] == "normal"
+    assert r["travada"] == False
+
+def test_trava_nunca_abaixa():
+    # Era normal (lâmpada), mas com gás vira urgente
+    r = classificar("a lâmpada queimou e está com cheiro de gás")
+    assert r["prioridade"] == "urgente"
+    assert r["motivo"] == "palavra de risco: gás"

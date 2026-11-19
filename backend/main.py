@@ -68,21 +68,6 @@ REGRAS = [
     (28, ["dúvida", "pergunta", "como faço", "posso", "qual o horário", "é permitido"], "duvida", "baixa", "sindico", "dúvida sobre regra do condomínio"),
 ]
 
-PALAVRAS_RISCO = [
-    ("gás", "manutencao", "palavra de risco: gás"),
-    ("cheiro de gás", "manutencao", "palavra de risco: cheiro de gás"),
-    ("fogo", "seguranca_acesso", "palavra de risco: fogo"),
-    ("incêndio", "seguranca_acesso", "palavra de risco: incêndio"),
-    ("fumaça", "seguranca_acesso", "palavra de risco: fumaça"),
-    ("preso no elevador", "manutencao", "palavra de risco: preso no elevador"),
-    ("alagamento", "manutencao", "palavra de risco: alagamento"),
-    ("desabamento", "manutencao", "palavra de risco: desabamento"),
-    ("trinca na estrutura", "manutencao", "palavra de risco: trinca na estrutura"),
-    ("choque", "manutencao", "palavra de risco: choque"),
-    ("fio exposto", "manutencao", "palavra de risco: fio exposto"),
-    ("agressão", "seguranca_acesso", "palavra de risco: agressão"),
-]
-
 PESO_PRIORIDADE = {"urgente": 4, "alta": 3, "normal": 2, "baixa": 1}
 
 def normalizar(texto: str) -> str:
@@ -92,6 +77,39 @@ def normalizar(texto: str) -> str:
     t = re.sub(r"[^a-z0-9\s']", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     return t
+
+def buscarPalavrasDeRisco():
+    # Lê do banco, não do código
+    # Se incluir uma palavra pelo painel do Neon, ela aparece aqui sem novo deploy
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT palavra, categoria FROM palavras_risco")
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [(r[0], r[1]) for r in rows]
+
+def aplicarTravaDeRisco(texto: str, resultado: dict):
+    t = normalizar(texto)
+    t_sem_cigarro = t.replace("fumaca de cigarro", "")
+
+    palavras = buscarPalavrasDeRisco()
+    palavras.sort(key=lambda x: len(normalizar(x[0])), reverse=True)
+
+    for palavra, categoria in palavras:
+        if normalizar(palavra) in t_sem_cigarro:
+            palavra_curta = "gás" if normalizar(palavra) == "cheiro de gas" else palavra
+            return {
+                "prioridade": "urgente",
+                "categoria": categoria,
+                "responsavel": "sindico",
+                "motivo": f"palavra de risco: {palavra_curta}",
+                "travada": True,
+                "palavraDeRisco": palavra_curta,
+            }
+
+    return {**resultado, "travada": False, "palavraDeRisco": None}
 
 def classificar(texto: str):
     t = normalizar(texto)
@@ -104,11 +122,8 @@ def classificar(texto: str):
                 break
     if melhor is None:
         melhor = {"prioridade": "normal", "categoria": "nao_reconhecida", "responsavel": "sindico", "motivo": "não reconhecida, revisar"}
-    t_sem_cigarro = t.replace("fumaca de cigarro", "")
-    for palavra, categoria, motivo in PALAVRAS_RISCO:
-        if normalizar(palavra) in t_sem_cigarro:
-            return {"prioridade": "urgente", "categoria": categoria, "responsavel": "sindico", "motivo": motivo}
-    return melhor
+
+    return aplicarTravaDeRisco(texto, melhor)
 
 @app.post("/ocorrencias/colar")
 def colar_mensagem(dados: ColarMensagemRequest):
