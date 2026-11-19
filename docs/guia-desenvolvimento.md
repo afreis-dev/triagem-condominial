@@ -2,9 +2,9 @@
 
 **Projeto:** Triagem Condominial — Squad 03
 
-## 1. Estrutura proposta do projeto
+Este guia reúne as instruções para configurar o ambiente local e integrar as funcionalidades desenvolvidas pela equipe, preservando o código existente.
 
-A estrutura abaixo aproveita os arquivos já desenvolvidos pela equipe, acrescentando a infraestrutura de desenvolvimento e simplificando a organização do front-end.
+## 1. Estrutura proposta do projeto
 
 ```text
 triagem-condominial/
@@ -14,11 +14,13 @@ triagem-condominial/
 │   │   │   ├── fila/
 │   │   │   ├── ocorrencia/
 │   │   │   └── ui/
+│   │   ├── hooks/
 │   │   ├── lib/
 │   │   ├── routes/
 │   │   └── test/
 │   ├── public/
 │   ├── package.json
+│   ├── bun.lock
 │   ├── vite.config.ts
 │   └── tsconfig.json
 │
@@ -34,7 +36,8 @@ triagem-condominial/
 ├── database/
 │   ├── migrations/
 │   │   ├── versions/
-│   │   └── env.py
+│   │   ├── env.py
+│   │   └── script.py.mako
 │   ├── schema.sql
 │   └── seed.sql
 │
@@ -43,7 +46,6 @@ triagem-condominial/
 │
 ├── docs/
 │   ├── CONTRATOS.md
-│   ├── ambiente-local.md
 │   └── guia-desenvolvimento.md
 │
 ├── .github/
@@ -51,27 +53,24 @@ triagem-condominial/
 ├── .gitignore
 ├── alembic.ini
 ├── docker-compose.yml
-├── CONTRATOS.md
 └── README.md
 ```
 
-**Observação:** esta é a estrutura desejada após a integração, não a estrutura atual da `develop`. Os arquivos estão distribuídos pelas branches da equipe.
+**Importante:** esta é a estrutura proposta após a integração. Os arquivos ainda estão distribuídos pelas branches da equipe.
 
-### Sugestão de simplificação do front-end
+### Organização do front-end
 
-Atualmente, o projeto React está em `frontend/condo-incident-compass/`.
+Propomos remover a pasta intermediária `frontend/condo-incident-compass/` e manter o projeto React diretamente em `frontend/`.
 
-Como o protótipo antigo será mantido em `prototype/prototipo v.1/`, sugerimos mover o conteúdo de `condo-incident-compass/` diretamente para `frontend/`.
+Essa reorganização foi testada localmente com sucesso:
 
-Isso elimina uma pasta intermediária desnecessária e simplifica a execução:
+- Build concluído.
+- 22 testes automatizados aprovados.
+- Aplicação aberta e executada no navegador.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+A mudança deve ser alinhada com a PR #3 antes de ser incorporada à `develop`.
 
-**Essa alteração deve ser alinhada com o responsável pela PR #3**, que já está reorganizando o front-end, antes de modificar os arquivos.
+Também propomos manter `CONTRATOS.md` em `docs/` e reunir `schema.sql` e `seed.sql` em `database/`, mediante alinhamento com os respectivos responsáveis.
 
 ## 2. Configuração do ambiente local
 
@@ -79,11 +78,12 @@ npm run dev
 
 - Docker Desktop
 - Python 3.12 (versão de referência)
-- Node.js 20 ou superior
+- Bun
+- Node.js 20 ou superior, conforme a configuração do front-end
 
 ### PostgreSQL
 
-Na raiz do repositório:
+Na raiz do projeto:
 
 ```powershell
 Copy-Item .env.example .env
@@ -91,128 +91,213 @@ docker compose up -d
 docker compose ps
 ```
 
-Confira se `POSTGRES_DB` e `DATABASE_URL` apontam para o mesmo banco local.
+O serviço PostgreSQL deve aparecer com status `healthy`.
 
-### Migrations com Alembic
+Confira se `POSTGRES_DB` e `DATABASE_URL` utilizam o mesmo nome de banco.
 
-O projeto utiliza **Alembic** para versionar alterações na estrutura do PostgreSQL, mantendo os bancos dos desenvolvedores sincronizados.
+Exemplo para desenvolvimento local:
 
-As migrations ficam em:
-
-```text
-database/
-└── migrations/
-    ├── versions/
-    ├── env.py
-    └── script.py.mako
+```dotenv
+POSTGRES_DB=triagem_db_dev
+DATABASE_URL=postgresql://triagem:triagem_dev@localhost:5432/triagem_db_dev
 ```
 
-O arquivo `alembic.ini` fica na raiz do repositório.
+Os valores acima são ilustrativos. Utilize as credenciais definidas no seu `.env`.
 
-**Comandos principais** (executados na raiz, com o ambiente virtual Python ativado):
+**Nunca envie o arquivo `.env` para o GitHub.**
 
-```powershell
-# Verificar a revisão atual do banco
-python -m alembic current
+### Back-end — FastAPI
 
-# Consultar o histórico de migrations
-python -m alembic history
-
-# Aplicar migrations pendentes
-python -m alembic upgrade head
-```
-
-**Orientações para a equipe:**
-
-- Não alterar diretamente a estrutura do banco sem registrar a mudança em uma migration.
-- Antes de criar uma migration, verificar se outro desenvolvedor já está trabalhando na mesma tabela.
-- Não executar migrations em staging ou produção sem aprovação.
-- Não modificar migrations que já foram aplicadas em ambientes compartilhados.
-- A migration inicial será definida a partir do esquema SQL desenvolvido na `feature/db`, após alinhamento com os contratos do projeto.
-
-**Importante:** o Alembic foi configurado na branch `chore/project-setup` e ainda precisa ser integrado à `develop`. Até lá, esses comandos dependem dos arquivos dessa branch.
-
-### Back-end
+Na raiz do projeto:
 
 ```powershell
-cd backend
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-uvicorn main:app --reload
+python -m pip install -r backend/requirements.txt
 ```
 
-A documentação interativa da API estará em `http://localhost:8000/docs`, após a integração do `main.py`.
+Para iniciar a aplicação FastAPI, após integrar `backend/main.py`:
 
-### Front-end
+```powershell
+python -m uvicorn backend.main:app --reload
+```
 
-Após a reorganização proposta:
+A API estará disponível em:
+
+- `http://127.0.0.1:8000`
+- `http://127.0.0.1:8000/docs` — documentação Swagger
+
+**Observação:** a aplicação atual não possui rota `GET /`. Receber `404 Not Found` na raiz é esperado e não significa que a API esteja quebrada.
+
+### Front-end — React + Bun
+
+O front-end utiliza `bun.lock` para registrar as dependências.
+
+Instale o Bun pelo site oficial: https://bun.sh/
+
+Na pasta `frontend/`, após a reorganização proposta:
 
 ```powershell
 cd frontend
-npm install
-npm run dev
+bun install --frozen-lockfile
+bun run dev
 ```
 
-Enquanto a reorganização não for aprovada, utilizar `frontend/condo-incident-compass/`.
+A aplicação deve iniciar em `http://localhost:8080`, conforme a configuração atual.
 
-## 3. Integração das funcionalidades
+Para validar:
 
-### Front-end
-
-Preservar os componentes e as rotas já desenvolvidos. A integração com o back-end deve seguir os contratos aprovados, sem modificar desnecessariamente a interface existente.
-
-### Back-end
-
-A equipe já desenvolveu `backend/main.py`, `backend/db.py` e as funções em `backend/lib/`.
-
-Esses arquivos precisam ser integrados respeitando as responsabilidades de cada módulo. Não criar implementações duplicadas de rotas ou regras de negócio.
-
-As funções temporárias devem ser substituídas pelas implementações definitivas somente após validação.
-
-### Banco de dados
-
-Os arquivos `schema.sql` e `seed.sql` foram desenvolvidos originalmente em `sql/`. A proposta é organizá-los em `database/`, junto das migrations do Alembic.
-
-Antes de realizar essa mudança, confirmar com o responsável pelo banco.
-
-**Não executar migrations definitivas antes de alinhar o esquema com `CONTRATOS.md`.**
-
-## 4. Fluxo de trabalho com Git
-
-Criar uma branch a partir da `develop` atualizada:
-
-```bash
-git checkout develop
-git pull origin develop
-git checkout -b feature/minha-funcionalidade
+```powershell
+bun run build
+bun run test
 ```
 
-Para incorporar as mudanças já aprovadas na `develop`:
+**Importante:**
 
-```bash
-git checkout develop
-git pull origin develop
-git checkout feature/minha-funcionalidade
-git merge develop
+- Preferir Bun para instalar e executar as dependências do front-end.
+- Não misturar `bun.lock` e `package-lock.json` sem alinhamento com a equipe.
+- Não executar `npm audit fix --force` para corrigir dependências automaticamente.
+- Se houver inconsistência de dependências, verificar a instalação local antes de modificar o `package.json`.
+
+**Validação realizada:** build aprovado e 22 testes passando com Bun, após a reorganização para `frontend/src/`.
+
+## 3. Banco de dados e Alembic
+
+O Alembic será utilizado para versionar alterações na estrutura do PostgreSQL.
+
+As migrations ficam em `database/migrations/`, e a configuração principal em `alembic.ini`.
+
+Com o ambiente virtual Python ativado, na raiz do projeto:
+
+```powershell
+# Consultar a versão atual
+python -m alembic current
+
+# Consultar o histórico
+python -m alembic history
 ```
 
-Resolver eventuais conflitos preservando as alterações das duas partes.
+Após a criação e aprovação da migration inicial, as migrations pendentes poderão ser aplicadas com:
 
-Depois de validar o funcionamento, abrir um pull request para `develop` e solicitar revisão.
+```powershell
+python -m alembic upgrade head
+```
 
-Não realizar merges diretamente nas branches compartilhadas.
+**Atenção:** ainda não existe uma migration inicial aprovada. Não utilize `upgrade head` como substituto do `schema.sql` antes desse alinhamento.
 
-## 5. Checklist antes do PR
+### Esquema SQL existente
 
-- [ ] A funcionalidade existente continua funcionando.
-- [ ] Não foram criados componentes, endpoints ou funções duplicadas.
+A branch `feature/db` disponibiliza:
+
+- `sql/schema.sql` — criação das tabelas.
+- `sql/seed.sql` — condomínios para testes.
+
+Esses arquivos foram executados com sucesso em um PostgreSQL local vazio.
+
+Para testar a implementação atual em um banco descartável, após conferir o banco de destino:
+
+```powershell
+Get-Content -Raw sql/schema.sql |
+  docker compose exec -T postgres psql -U triagem -d triagem_db_dev -v ON_ERROR_STOP=1 -1
+```
+
+Depois:
+
+```powershell
+Get-Content -Raw sql/seed.sql |
+  docker compose exec -T postgres psql -U triagem -d triagem_db_dev -v ON_ERROR_STOP=1 -1
+```
+
+Esses comandos são destinados exclusivamente ao ambiente local de teste, com o esquema da `feature/db` ainda não migrado para Alembic. Não os execute sobre bancos que já tenham tabelas ou dados importantes.
+
+### Regras para migrations
+
+- Alinhar a migration inicial com o responsável pelo banco.
+- Não modificar migrations já aplicadas em ambientes compartilhados.
+- Não executar migrations em staging ou produção sem aprovação.
+- Não manter definições conflitantes de tabelas no SQL e no Alembic.
+
+## 4. Integração das funcionalidades
+
+### Front-end e FastAPI
+
+O front-end já possui páginas, componentes, rotas e dados simulados.
+
+O back-end possui a rota:
+
+`POST /ocorrencias/colar`
+
+Essa rota foi testada com sucesso, retornando HTTP 200 e persistindo uma ocorrência no PostgreSQL.
+
+**Isso ainda não significa que o front-end esteja integrado à API.**
+
+Antes de substituir dados simulados por requisições reais, confirmar o formato das entradas e saídas, os identificadores e o tratamento de erros.
+
+### Funções de negócio
+
+A equipe desenvolveu:
+
+- `backend/lib/classificar.py`
+- `backend/lib/salvar_ocorrencia.py`
+- `backend/lib/registrar_decisao.py`
+
+Os imports e retornos básicos dessas funções foram testados com sucesso.
+
+**Entretanto, essas funções ainda são mocks.** Elas não representam necessariamente o funcionamento definitivo.
+
+Também existe uma implementação própria de `classificar()` em `backend/main.py`.
+
+As duas implementações retornam resultados diferentes, apesar de ambas executarem corretamente.
+
+### Incompatibilidades identificadas
+
+| Área | Diferença encontrada |
+|---|---|
+| Classificação | `backend/main.py` e `backend/lib/classificar.py` possuem lógicas e respostas distintas |
+| Identificadores | O esquema SQL usa UUID para ocorrências; `CONTRATOS.md` prevê IDs numéricos |
+| Condomínios | O SQL usa IDs textuais; o contrato prevê IDs numéricos |
+| Status | O SQL utiliza `Nova`; o contrato prevê `nova` |
+| Dependências | A API usa `psycopg2`; a infraestrutura também possui `psycopg` 3 |
+
+**Essas diferenças precisam ser resolvidas com os responsáveis antes da integração definitiva.**
+
+Não substituir uma implementação pela outra sem verificar quem depende de cada contrato.
+
+## 5. Testes de integração realizados
+
+Testes executados localmente na branch experimental `test/integration`:
+
+| Teste | Resultado |
+|---|---|
+| Build do React com Bun | Aprovado |
+| Testes automatizados do React | 22 aprovados |
+| Execução do front-end no navegador | Aprovada |
+| Inicialização do FastAPI | Aprovada |
+| Documentação Swagger | Aprovada |
+| Conexão Python → PostgreSQL | Aprovada |
+| Criação das tabelas SQL | Aprovada |
+| Inserção dos dados de exemplo | Aprovada |
+| POST `/ocorrencias/colar` | HTTP 200 |
+| Persistência da ocorrência no banco | Confirmada |
+| Imports das funções de negócio | Aprovados |
+| Execução dos mocks | Aprovada |
+| Compatibilidade dos contratos | Pendente |
+| Comunicação real React → FastAPI | Ainda não testada |
+
+Esses testes comprovam o funcionamento das partes verificadas, mas não garantem a integração completa de todas as funcionalidades.
+
+## 6. Checklist antes do pull request
+
+- [ ] A implementação respeita a estrutura acordada.
+- [ ] As funcionalidades existentes continuam funcionando.
+- [ ] Não foram criadas rotas ou regras de negócio duplicadas.
 - [ ] Os contratos entre front-end, back-end e banco foram respeitados.
-- [ ] As dependências necessárias foram registradas.
-- [ ] Arquivos `.env`, `.venv` e caches não foram versionados.
-- [ ] As alterações foram testadas.
-- [ ] O PR está direcionado à `develop` para revisão.
+- [ ] Dependências foram registradas corretamente.
+- [ ] Arquivos `.env`, `.venv`, caches e arquivos temporários não foram versionados.
+- [ ] Os testes pertinentes foram executados.
+- [ ] O PR descreve possíveis impactos em outros módulos.
+- [ ] O PR foi direcionado à `develop` para revisão.
 
 ---
 
-**Regra principal:** integrar o que cada colega já desenvolveu, preservando as funcionalidades e evitando mudanças estruturais sem alinhamento com o time.
+**Regra principal:** preservar o que cada desenvolvedor construiu, validar os contratos e integrar as funcionalidades sem introduzir regressões.
