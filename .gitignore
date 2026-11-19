@@ -1,6 +1,28 @@
+# Variáveis de ambiente
 .env
 .env.*
 !.env.example
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node.js / React
 node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# IDE e sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
