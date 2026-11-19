@@ -10,7 +10,7 @@ Projeto da Squad 03 no bootcamp.
 |---|---|
 | Front | React + TypeScript (TanStack Start e Vite), interfaces criadas com o Lovable |
 | Back | Python (FastAPI) |
-| Banco | PostgreSQL. Neon em staging e produção, Postgres local com Docker no desenvolvimento (em montagem) |
+| Banco | PostgreSQL. Neon em staging e produção, Postgres local com Docker no desenvolvimento |
 | Hospedagem | A definir |
 
 ## Estrutura do repositório
@@ -21,6 +21,8 @@ Projeto da Squad 03 no bootcamp.
 | `prototype/prototipo v.1/` | Protótipo navegável, só de referência |
 | `backend/lib/` | Funções do servidor. Por enquanto são versões de teste |
 | `CONTRATOS.md` | Contrato de cada função: entrada, saída e erros |
+| `docker-compose.yml` e `database/` | Postgres local com Docker e migrations (Alembic) |
+| `docs/guia-desenvolvimento.md` | Passo a passo para configurar o ambiente local e integrar as partes |
 
 ## Como começar
 
@@ -53,7 +55,7 @@ cd backend
 python -c "from lib.classificar import classificar; print(classificar('cheiro de gás no bloco B'))"
 ```
 
-O servidor FastAPI e o banco local entram aqui quando forem para a `develop`.
+Para subir o banco local com Docker, o servidor FastAPI e as migrations, siga o `docs/guia-desenvolvimento.md`.
 
 Variáveis de ambiente, como a `DATABASE_URL`, ficam num `.env` local. O `.env` nunca vai para o repositório.
 
