@@ -194,3 +194,38 @@ Sucesso:
 ### Registro não muda
 
 Um registro nunca é alterado nem apagado. Correção vira um novo registro. A função só insere, e a tabela `registros_decisao` recusa UPDATE e DELETE por gatilho no banco, então a regra vale também para chamada direta ao banco.
+
+## concluirOcorrencia(ocorrenciaId)
+
+Python: `backend/lib/concluir_ocorrencia.py` → `concluir_ocorrencia(ocorrencia_id)`. História H13.
+
+Conclui uma ocorrência que está em andamento. O botão "Concluir" chama esta função e volta para a fila.
+
+### O que a função faz
+
+1. Confere se a ocorrência existe e se o status é `em_andamento`.
+2. Grava o status `concluida` e `concluida_em` com o horário do servidor.
+3. Chama `registrarDecisao` com o registro de `conclusao`, com `quemDecidiu` igual a `sindico`.
+
+Os status da ocorrência são `nova`, `em_andamento` e `concluida`.
+
+### Saída
+
+Sucesso:
+
+```json
+{ "ok": true, "ocorrenciaId": 42, "concluidaEm": "2026-11-19T14:10:00+00:00" }
+```
+
+Erro, com a chave igual ao nome do campo:
+
+```json
+{ "ok": false, "erros": { "status": "Só dá para concluir uma ocorrência em andamento" } }
+```
+
+### Mensagens de erro
+
+| Campo | Quando | Mensagem |
+|---|---|---|
+| ocorrenciaId | vazio ou não existe | Ocorrência não encontrada |
+| status | não está em `em_andamento` | Só dá para concluir uma ocorrência em andamento |
