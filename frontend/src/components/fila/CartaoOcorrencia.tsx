@@ -27,9 +27,10 @@ export function CartaoOcorrencia({ ocorrencia }: { ocorrencia: Ocorrencia }) {
       params={{ id: String(ocorrencia.id) }}
       className={cn(
         "relative block overflow-hidden rounded-xl border bg-card py-3 pl-4 pr-3.5 shadow-card transition-all",
-        "before:absolute before:inset-y-0 before:left-0 before:w-1",
+        "before:absolute before:inset-y-0 before:left-0",
         "hover:-translate-y-px hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         barra[ocorrencia.prioridade],
+        ocorrencia.prioridade === "urgente" ? "before:w-2" : "before:w-1",
       )}
     >
       {/* 1: priority + condo + elapsed */}
