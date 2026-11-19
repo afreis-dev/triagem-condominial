@@ -23,17 +23,31 @@ CREATE TABLE IF NOT EXISTS palavras_risco (
   categoria TEXT NOT NULL
 );
 
-INSERT INTO palavras_risco (palavra, categoria) VALUES
-('gás', 'manutencao'),
-('cheiro de gás', 'manutencao'),
-('fogo', 'seguranca_acesso'),
-('incêndio', 'seguranca_acesso'),
-('fumaça', 'seguranca_acesso'),
-('preso no elevador', 'manutencao'),
-('alagamento', 'manutencao'),
-('desabamento', 'manutencao'),
-('trinca na estrutura', 'manutencao'),
-('choque', 'manutencao'),
-('fio exposto', 'manutencao'),
-('agressão', 'seguranca_acesso')
-ON CONFLICT (palavra) DO NOTHING;
+-- Tabela de histórico - H14
+CREATE TABLE IF NOT EXISTS registros_decisao (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ocorrencia_id UUID NOT NULL REFERENCES ocorrencias(id) ON DELETE CASCADE,
+  acao TEXT NOT NULL,
+  nota TEXT NOT NULL,
+  criado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Gatilho que recusa UPDATE e DELETE
+CREATE OR REPLACE FUNCTION recusar_alteracao_registro()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Registros de decisão não podem ser alterados ou apagados';
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_proibir_update_registros ON registros_decisao;
+DROP TRIGGER IF EXISTS trg_proibir_delete_registros ON registros_decisao;
+
+CREATE TRIGGER trg_proibir_update_registros
+BEFORE UPDATE ON registros_decisao
+FOR EACH ROW EXECUTE FUNCTION recusar_alteracao_registro();
+
+CREATE TRIGGER trg_proibir_delete_registros
+BEFORE DELETE ON registros_decisao
+FOR EACH ROW EXECUTE FUNCTION recusar_alteracao_registro();
