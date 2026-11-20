@@ -23,7 +23,7 @@ O modelo contempla seis entidades: `sindicos`, `condominios`, `responsaveis`, `o
 - **Ocorrência 1:N Registros de decisão:** histórico cronológico append-only; nunca apagar em cascata.
 - **Palavras de risco:** tabela independente. A ocorrência guarda um *snapshot* textual de `palavra_de_risco`, sem FK física, para preservar a evidência após edição da lista.
 
-**Convenções:** `int` indica `SERIAL` para PKs e `INTEGER` para FKs; `UK` significa coluna UNIQUE. O Mermaid mostra a estrutura lógica, não substitui constraints, trigger e índices descritos em `modelagem-sprint-1.md`.
+**Convenções:** `int` representa `SERIAL` nas chaves primárias e `INTEGER` nas chaves estrangeiras; `UK` identifica uma restrição de unicidade (`UNIQUE`). O diagrama apresenta a estrutura lógica do banco de dados e deve ser interpretado em conjunto com as restrições, os índices e os gatilhos documentados em [Modelagem do banco de dados](./modelagem-sprint-1.md).
 
 ## Conferência antes da migration
 
