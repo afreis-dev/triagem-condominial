@@ -1,0 +1,151 @@
+{
+  "fonte": "Dados_fixos_e_regras_Sprint1.xlsx — PO, 17/11/2026",
+  "sindicos": [
+    {
+      "nome": "Ana Beatriz Moreira",
+      "celular": "(19) 99123-4567",
+      "email": "ana.moreira@exemplo.com.br"
+    }
+  ],
+  "condominios": [
+    {
+      "identificador": "aurora",
+      "nome": "Residencial Aurora",
+      "bairro": "Centro"
+    },
+    {
+      "identificador": "vista-verde",
+      "nome": "Edifício Vista Verde",
+      "bairro": "Jardim Europa"
+    },
+    {
+      "identificador": "palmeiras",
+      "nome": "Condomínio Jardim das Palmeiras",
+      "bairro": "Vila Nova"
+    }
+  ],
+  "responsaveis": [
+    {
+      "condominio": "aurora",
+      "papel": "zelador",
+      "nome": "Carlos Pereira",
+      "celular": "(19) 99888-1122"
+    },
+    {
+      "condominio": "aurora",
+      "papel": "portaria",
+      "nome": "Rita Souza",
+      "celular": "(19) 99888-3344"
+    },
+    {
+      "condominio": "vista-verde",
+      "papel": "zelador",
+      "nome": "Marcos Lima",
+      "celular": "(19) 99777-5566"
+    },
+    {
+      "condominio": "vista-verde",
+      "papel": "portaria",
+      "nome": "Joana Alves",
+      "celular": "(19) 99777-7788"
+    },
+    {
+      "condominio": "palmeiras",
+      "papel": "zelador",
+      "nome": "Pedro Ramos",
+      "celular": "(19) 99666-9900"
+    },
+    {
+      "condominio": "palmeiras",
+      "papel": "portaria",
+      "nome": "Lúcia Nunes",
+      "celular": "(19) 99666-2211"
+    }
+  ],
+  "palavras_risco": [
+    {
+      "palavra": "gás",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: gás"
+    },
+    {
+      "palavra": "cheiro de gás",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: cheiro de gás"
+    },
+    {
+      "palavra": "fogo",
+      "categoria": "seguranca_acesso",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: fogo"
+    },
+    {
+      "palavra": "incêndio",
+      "categoria": "seguranca_acesso",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: incêndio"
+    },
+    {
+      "palavra": "fumaça",
+      "categoria": "seguranca_acesso",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: fumaça"
+    },
+    {
+      "palavra": "preso no elevador",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: preso no elevador"
+    },
+    {
+      "palavra": "alagamento",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: alagamento"
+    },
+    {
+      "palavra": "desabamento",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: desabamento"
+    },
+    {
+      "palavra": "trinca na estrutura",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: trinca na estrutura"
+    },
+    {
+      "palavra": "choque",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: choque"
+    },
+    {
+      "palavra": "fio exposto",
+      "categoria": "manutencao",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: fio exposto"
+    },
+    {
+      "palavra": "agressão",
+      "categoria": "seguranca_acesso",
+      "prioridade": "urgente",
+      "responsavel_sugerido": "sindico",
+      "motivo": "palavra de risco: agressão"
+    }
+  ]
+}
