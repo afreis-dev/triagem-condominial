@@ -229,3 +229,52 @@ Erro, com a chave igual ao nome do campo:
 |---|---|---|
 | ocorrenciaId | vazio ou não existe | Ocorrência não encontrada |
 | status | não está em `em_andamento` | Só dá para concluir uma ocorrência em andamento |
+
+## listarFila()
+
+Python: `backend/lib/listar_fila.py` → `listar_fila()`. História H03.
+
+Busca no banco as ocorrências de todos os condomínios, com os campos que o cartão da fila mostra. A tela chama esta função ao abrir e ao tocar em "Atualizar". A função só lê, não grava nada, e não recebe campos.
+
+### Saída
+
+```json
+{
+  "ok": true,
+  "ocorrencias": [
+    {
+      "id": 42,
+      "protocolo": "TS-000042",
+      "condominioId": 1,
+      "condominio": "Residencial Aurora",
+      "descricao": "Lâmpada do hall queimada",
+      "origem": "morador",
+      "status": "nova",
+      "prioridade": "normal",
+      "categoria": "manutencao",
+      "responsavelSugerido": "zelador",
+      "motivo": "manutenção simples de área comum",
+      "travada": false,
+      "criadaEm": "2026-11-19T14:10:00+00:00",
+      "acao": null
+    }
+  ]
+}
+```
+
+| Campo | Regra |
+|---|---|
+| id, protocolo, condominioId, origem, status | Os mesmos de `salvarOcorrencia` e `concluirOcorrencia` |
+| condominio | Nome do condomínio |
+| descricao | Texto completo. O título do cartão é o início dela |
+| prioridade, categoria, responsavelSugerido, motivo, travada | O que `classificar` devolveu. Se a classificação falhou, os três primeiros vêm `null` e o motivo é `não classificada, revisar` |
+| criadaEm | Texto ISO 8601 em UTC (`+00:00`). O cartão calcula o "há 2 h" a partir dele |
+| acao | Última ação que o síndico registrou (`delegar`, `agendar` ou `eu_mesmo`), ou `null`. É a marca de ação do cartão |
+
+### Regras
+
+- Vêm as ocorrências de todos os status (`nova`, `em_andamento` e `concluida`). As abas e as contagens de cada aba saem dessa lista.
+- Enquanto não há login, vêm os condomínios de todo o banco.
+- Vem por ordem de chegada, da mais antiga para a mais nova (`criadaEm` e depois `id`). A ordenação da fila por prioridade não é feita aqui.
+- Sem nenhuma ocorrência, a resposta é `{ "ok": true, "ocorrencias": [] }`.
+- Não há mensagens de erro de validação, porque a função não recebe campos.
