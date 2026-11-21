@@ -6,6 +6,7 @@ import os
 import unicodedata
 import re
 import uuid
+from typing import Optional
 
 load_dotenv()
 
@@ -79,7 +80,7 @@ def normalizar(texto: str) -> str:
     return t
 
 def buscarPalavrasDeRisco():
-    # Lê do banco, não do código
+    # Leitua feita do banco, e não do código
     # Se incluir uma palavra pelo painel do Neon, ela aparece aqui sem novo deploy
     conn = get_db()
     cur = conn.cursor()
@@ -226,3 +227,68 @@ def concluir_ocorrencia(id: str):
         conn.close()
 
     return {"id": str(atualizado[0]), "status": atualizado[1]}
+
+class OcorrenciaFormBody(BaseModel):
+    perfil: str
+    nome: Optional[str] = None
+    apartamento: Optional[str] = None
+    celular: Optional[str] = None
+    local: Optional[str] = None
+    descricao: str
+
+def _buscar_condominio_por_slug(identificador: str, conn):
+    cur = conn.cursor()
+    # id já é o slug: 'aurora', 'vista-verde', 'palmeiras'
+    cur.execute("SELECT id, nome FROM condominios WHERE LOWER(id) = LOWER(%s)", (identificador,))
+    row = cur.fetchone()
+    if row:
+        cur.close()
+        return row
+    # fallback: busca por nome
+    cur.execute("SELECT id, nome FROM condominios WHERE LOWER(nome) = LOWER(%s)", (identificador,))
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+@app.get("/api/condominios/{identificador}")
+def get_condominio_api(identificador: str):
+    conn = get_db()
+    try:
+        row = _buscar_condominio_por_slug(identificador, conn)
+        if not row:
+            raise HTTPException(status_code=404, detail="condomínio não encontrado")
+        return {"id": row[0], "nome": row[1]}
+    finally:
+        conn.close()
+
+@app.post("/api/condominios/{identificador}/ocorrencias", status_code=201)
+def criar_ocorrencia_form(identificador: str, body: OcorrenciaFormBody):
+    conn = get_db()
+    try:
+        row = _buscar_condominio_por_slug(identificador, conn)
+        if not row:
+            raise HTTPException(status_code=404, detail="condomínio não encontrado")
+        resultado = classificar(body.descricao)
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO ocorrencias
+            (texto_original, condominio_id, nome_remetente, celular_remetente, origem, prioridade, categoria, responsavel_sugerido, motivo)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            body.descricao,
+            str(row[0]),
+            body.nome,
+            body.celular,
+            body.perfil,
+            resultado["prioridade"],
+            resultado["categoria"],
+            resultado["responsavel"],
+            resultado["motivo"]
+        ))
+        id_novo = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        return {"ok": True, "ocorrenciaId": str(id_novo), "protocolo": str(id_novo)[:8]}
+    finally:
+        conn.close()
