@@ -86,9 +86,9 @@ Também propomos manter `CONTRATOS.md` em `docs/` e reunir `schema.sql` e `seed.
 Na raiz do projeto:
 
 ```powershell
-Copy-Item .env.example .env
-docker compose up -d
-docker compose ps
+if (!(Test-Path .env)) {
+    Copy-Item .env.example .env
+}
 ```
 
 O serviço PostgreSQL deve aparecer com status `healthy`.
@@ -161,61 +161,43 @@ bun run test
 
 **Validação realizada:** build aprovado e 22 testes passando com Bun, após a reorganização para `frontend/src/`.
 
+
 ## 3. Banco de dados e Alembic
 
-O Alembic será utilizado para versionar alterações na estrutura do PostgreSQL.
+O banco de dados da Sprint 1 utiliza PostgreSQL 16, Docker Compose e Alembic para versionamento da estrutura.
 
-As migrations ficam em `database/migrations/`, e a configuração principal em `alembic.ini`.
+Os comandos de desenvolvimento são centralizados pelo Taskipy.
 
-Com o ambiente virtual Python ativado, na raiz do projeto:
+Com o ambiente virtual ativado e o `.env` configurado, execute na raiz do projeto:
 
-```powershell
-# Consultar a versão atual
-python -m alembic current
-
-# Consultar o histórico
-python -m alembic history
+```bash
+python -m pip install -r backend/requirements-dev.txt
+task db-up
 ```
 
-Após a criação e aprovação da migration inicial, as migrations pendentes poderão ser aplicadas com:
+Aguarde o PostgreSQL ficar saudável e execute:
 
-```powershell
-python -m alembic upgrade head
+```bash
+task db-migrate
+task db-seed
+task db-seed-check
 ```
 
-**Atenção:** ainda não existe uma migration inicial aprovada. Não utilize `upgrade head` como substituto do `schema.sql` antes desse alinhamento.
+Para carregar ocorrências demonstrativas:
 
-### Esquema SQL existente
-
-A branch `feature/db` disponibiliza:
-
-- `sql/schema.sql` — criação das tabelas.
-- `sql/seed.sql` — condomínios para testes.
-
-Esses arquivos foram executados com sucesso em um PostgreSQL local vazio.
-
-Para testar a implementação atual em um banco descartável, após conferir o banco de destino:
-
-```powershell
-Get-Content -Raw sql/schema.sql |
-  docker compose exec -T postgres psql -U triagem -d triagem_db_dev -v ON_ERROR_STOP=1 -1
+```bash
+task db-seed-demo
 ```
 
-Depois:
+Para executar os testes automatizados:
 
-```powershell
-Get-Content -Raw sql/seed.sql |
-  docker compose exec -T postgres psql -U triagem -d triagem_db_dev -v ON_ERROR_STOP=1 -1
+```bash
+task db-test
 ```
 
-Esses comandos são destinados exclusivamente ao ambiente local de teste, com o esquema da `feature/db` ainda não migrado para Alembic. Não os execute sobre bancos que já tenham tabelas ou dados importantes.
+A documentação completa de configuração, modelagem, migrations, seeds, testes e solução de problemas está disponível no [Guia do banco de dados](./banco-de-dados/README.md).
 
-### Regras para migrations
-
-- Alinhar a migration inicial com o responsável pelo banco.
-- Não modificar migrations já aplicadas em ambientes compartilhados.
-- Não executar migrations em staging ou produção sem aprovação.
-- Não manter definições conflitantes de tabelas no SQL e no Alembic.
+Não utilize os antigos arquivos SQL da branch `feature/db` para criar tabelas sobre o esquema gerenciado pelo Alembic.
 
 ## 4. Integração das funcionalidades
 
