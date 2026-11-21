@@ -112,6 +112,11 @@ def classificar(texto):
                 melhor["categoria"] = "seguranca_acesso"
             else:
                 melhor["categoria"] = "manutencao"
+
+    melhor["responsavelSugerido"] = melhor["responsavel"]
+    melhor["responsavel_sugerido"] = melhor["responsavel"]
+    melhor["palavra_de_risco"] = melhor["palavraDeRisco"]
+    melhor["fonte"] = "regras"
     return melhor
 
 def aplicarTravaDeRisco(texto, resultado):
@@ -123,5 +128,7 @@ def aplicarTravaDeRisco(texto, resultado):
         resultado["travada"] = True
         resultado["palavraDeRisco"] = exibicao
         resultado["responsavel"] = "sindico"
-    
-    return resultado
+        resultado["responsavelSugerido"] = "sindico"
+        resultado["palavra_de_risco"] = exibicao
+        resultado["fonte"] = "regras"
+    return resultado  
