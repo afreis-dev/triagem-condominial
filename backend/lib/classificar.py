@@ -16,6 +16,16 @@ def normalizar(texto):
 
 REGRAS_NORMALIZADAS = tuple((tuple(normalizar(palavra) for palavra in regra.palavras), regra) for regra in REGRAS)
 
+NAO_RECONHECIDA = {
+    "prioridade": "normal",
+    "categoria": "duvida",
+    "responsavelSugerido": "sindico",
+    "motivo": "não reconhecida, revisar",
+    "travada": False,
+    "palavraDeRisco": None,
+    "fonte": "regras",
+}
+
 
 def _aparece(palavra, texto):
     """Diz se a palavra aparece inteira no texto já padronizado."""
@@ -36,7 +46,7 @@ def _resultado(regra):
 
 
 def classificar(texto):
-    """Procura no texto as palavras das regras do PO e devolve a de maior prioridade (no empate, a primeira da tabela)."""
+    """Procura no texto as palavras das regras do PO e devolve a de maior prioridade (no empate, a primeira da tabela). Sem regra, devolve "não reconhecida, revisar"."""
     limpo = normalizar(texto)
     escolhida = None
     for palavras, regra in REGRAS_NORMALIZADAS:
@@ -44,5 +54,5 @@ def classificar(texto):
             if escolhida is None or PRIORIDADES.index(regra.prioridade) < PRIORIDADES.index(escolhida.prioridade):
                 escolhida = regra
     if escolhida is None:
-        raise LookupError("nenhuma regra encontrada")
+        return dict(NAO_RECONHECIDA)
     return _resultado(escolhida)
