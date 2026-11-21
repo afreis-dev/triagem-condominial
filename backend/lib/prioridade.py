@@ -1,13 +1,3 @@
-"""
-prioridade.py - Ordenar cartões da fila - H03 / Fila
-Regra: primeiro por prioridade (urgente, alta, normal, baixa)
-e, no empate, pela hora de entrada, da mais antiga para a mais nova.
-
-Como rodar:
-    python prioridade.py
-Pronto quando: urgentes no topo e, entre duas urgentes, a mais antiga vem primeiro.
-"""
-
 from datetime import datetime
 
 ORDEM_PRIORIDADE = {"urgente": 0, "alta": 1, "normal": 2, "baixa": 3}
