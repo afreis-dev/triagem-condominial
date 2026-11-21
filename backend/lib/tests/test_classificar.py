@@ -1,8 +1,9 @@
 import pytest
 
+import lib.classificar as modulo
 from lib.classificar import classificar, normalizar
 from lib.dominio import CATEGORIAS, PRIORIDADES, RESPONSAVEIS
-from lib.regras import REGRAS
+from lib.regras import REGRAS, Regra
 
 CHAVES = {"prioridade", "categoria", "responsavelSugerido", "motivo", "travada", "palavraDeRisco", "fonte"}
 
@@ -45,6 +46,29 @@ def test_o_motivo_vem_da_regra_encontrada():
     assert resposta["categoria"] == "convivencia"
     assert resposta["responsavelSugerido"] == "sindico"
     assert resposta["motivo"] == "conflito entre moradores, sem risco imediato"
+
+
+def test_texto_com_duas_regras_usa_a_de_maior_prioridade():
+    resposta = classificar("barulho no salão e falta de água no bloco A")
+    assert resposta["prioridade"] == "alta"
+    assert resposta["motivo"] == "falta de água afeta muitos moradores"
+
+
+def test_a_ordem_das_palavras_no_texto_nao_muda_o_resultado():
+    assert classificar("falta de água no bloco A e barulho no salão") == classificar(
+        "barulho no salão e falta de água no bloco A"
+    )
+
+
+def test_no_empate_vale_a_primeira_regra_da_tabela():
+    assert classificar("cachorro latindo e barulho")["motivo"] == "conflito entre moradores, sem risco imediato"
+
+
+def test_maior_prioridade_vale_mesmo_com_a_regra_depois_na_tabela(monkeypatch):
+    baixa = Regra(("reserva",), "pedido_administrativo", "baixa", "sindico", "pedido simples")
+    alta = Regra(("goteira",), "manutencao", "alta", "zelador", "vazamento ativo")
+    monkeypatch.setattr(modulo, "REGRAS_NORMALIZADAS", ((("reserva",), baixa), (("goteira",), alta)))
+    assert classificar("reserva do salão e goteira no teto")["motivo"] == "vazamento ativo"
 
 
 def test_a_palavra_precisa_aparecer_inteira():

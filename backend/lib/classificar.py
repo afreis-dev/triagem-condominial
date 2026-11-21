@@ -1,6 +1,7 @@
 import re
 import unicodedata
 
+from .dominio import PRIORIDADES
 from .regras import REGRAS
 
 
@@ -35,9 +36,13 @@ def _resultado(regra):
 
 
 def classificar(texto):
-    """Procura no texto as palavras das regras do PO e devolve a primeira regra encontrada, no formato do contrato."""
+    """Procura no texto as palavras das regras do PO e devolve a de maior prioridade (no empate, a primeira da tabela)."""
     limpo = normalizar(texto)
+    escolhida = None
     for palavras, regra in REGRAS_NORMALIZADAS:
         if any(_aparece(palavra, limpo) for palavra in palavras):
-            return _resultado(regra)
-    raise LookupError("nenhuma regra encontrada")
+            if escolhida is None or PRIORIDADES.index(regra.prioridade) < PRIORIDADES.index(escolhida.prioridade):
+                escolhida = regra
+    if escolhida is None:
+        raise LookupError("nenhuma regra encontrada")
+    return _resultado(escolhida)
