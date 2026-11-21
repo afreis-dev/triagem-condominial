@@ -1,0 +1,6 @@
+[tool.taskipy.tasks]
+db-up = { cmd = "docker compose up -d", help = "Inicia o PostgreSQL" }
+db-status = { cmd = "python -m alembic current", help = "Mostra a migration atual" }
+db-migrate = { cmd = "python -m alembic upgrade head", help = "Aplica as migrations pendentes" }
+db-history = { cmd = "python -m alembic history", help = "Lista as migrations" }
+db-test = { cmd = "python scripts/db_test.py", help = "Executa testes em banco temporário" }
