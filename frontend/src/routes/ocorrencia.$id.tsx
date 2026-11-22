@@ -15,6 +15,7 @@ import { PrioridadeSecao } from "@/components/ocorrencia/PrioridadeSecao";
 import { Secao } from "@/components/ocorrencia/Secao";
 import { PriorityBadge } from "@/components/fila/PriorityBadge";
 import { Button } from "@/components/ui/button";
+import { useConclusaoApi, useFilaApi } from "@/lib/fila-api";
 import {
   STATUS,
   concluirOcorrencia,
@@ -23,6 +24,7 @@ import {
   podeConcluir,
   porQueEstaAqui,
   tempoDecorrido,
+  type Ocorrencia,
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia, useOcorrencias } from "@/lib/ocorrencias-store";
 
@@ -43,12 +45,27 @@ export const Route = createFileRoute("/ocorrencia/$id")({
 
 function OcorrenciaPage() {
   const { id } = Route.useParams();
-  const o = useOcorrencias().find((x) => String(x.id) === id);
+  const navigate = Route.useNavigate();
+  const demonstracao = id.startsWith("demo-");
+  const fila = useFilaApi(!demonstracao);
+  const ocorrenciasDemo = useOcorrencias();
+  const conclusao = useConclusaoApi();
+  const o = (demonstracao ? ocorrenciasDemo : fila.data)?.find(
+    (x) => (demonstracao ? `demo-${x.id}` : String(x.id)) === id,
+  );
+
+  if (!demonstracao && fila.isPending) {
+    return <p role="status" className="py-10 text-center">Carregando ocorrência…</p>;
+  }
 
   if (!o) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-10 text-center">
-        <p className="text-muted-foreground">Ocorrência não encontrada.</p>
+        <p className="text-muted-foreground">
+          {!demonstracao && fila.isError
+            ? "Não foi possível consultar a ocorrência."
+            : "Ocorrência não encontrada."}
+        </p>
         <Button asChild variant="outline" className="mt-4">
           <Link to="/fila">Voltar para a fila</Link>
         </Button>
@@ -57,6 +74,23 @@ function OcorrenciaPage() {
   }
 
   const status = STATUS.find((s) => s.id === o.status)?.label;
+  const relator = o.relator;
+
+  async function concluir(ocorrencia: Ocorrencia) {
+    if (!podeConcluir(ocorrencia) || conclusao.isPending) return;
+    try {
+      if (demonstracao) {
+        atualizarOcorrencia(ocorrencia.id, (x) => concluirOcorrencia(x, new Date().toISOString()));
+      } else {
+        await conclusao.mutateAsync(ocorrencia.id);
+      }
+    } catch (erro) {
+      toast.error(erro instanceof Error ? erro.message : "Não foi possível concluir a ocorrência.");
+      return;
+    }
+    toast.success(demonstracao ? "Ocorrência de demonstração concluída" : "Ocorrência concluída");
+    await navigate({ to: "/fila", search: { aba: "concluida" } });
+  }
 
   return (
     <div className="min-h-screen pb-12">
@@ -68,7 +102,9 @@ function OcorrenciaPage() {
             </Link>
           </Button>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold leading-tight">{nomeCondominio(o.condominioId)}</p>
+            <p className="truncate text-sm font-semibold leading-tight">
+              {o.condominioNome ?? nomeCondominio(o.condominioId)}
+            </p>
             <div className="mt-1 flex items-center gap-2">
               <span className="font-mono text-[11px] text-muted-foreground">{o.protocolo}</span>
               <PriorityBadge prioridade={o.prioridade} />
@@ -77,19 +113,18 @@ function OcorrenciaPage() {
           {podeConcluir(o) && (
             <Button
               className="h-10 shrink-0"
-              onClick={() => {
-                atualizarOcorrencia(o.id, (x) => concluirOcorrencia(x, new Date().toISOString()));
-                toast.success("Ocorrência concluída");
-              }}
+              disabled={conclusao.isPending}
+              onClick={() => void concluir(o)}
             >
               <CheckCheck />
-              Concluir
+              {conclusao.isPending ? "Concluindo…" : "Concluir"}
             </Button>
           )}
         </div>
       </header>
 
       <main className="mx-auto grid max-w-3xl gap-3 px-4 pt-4 sm:gap-4 sm:px-6 sm:pt-6">
+        {demonstracao && <p role="status">Ocorrência de demonstração</p>}
         <div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="rounded-full bg-muted px-2.5 py-0.5 font-medium">{status}</span>
@@ -112,16 +147,18 @@ function OcorrenciaPage() {
         <Secao titulo="Descrição" icone={<FileText className="size-4" />}>
           <p className="whitespace-pre-line text-[15px] leading-relaxed">{o.descricao}</p>
           <div className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-2">
-            <div className="flex items-start gap-2.5">
-              <UserRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <div className="min-w-0 text-sm">
-                <p className="font-semibold">{o.relator.nome}</p>
-                <p className="text-muted-foreground">
-                  {o.relator.perfil}
-                  {o.relator.apartamento && ` · Apto ${o.relator.apartamento}`}
-                </p>
+            {relator && (
+              <div className="flex items-start gap-2.5">
+                <UserRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold">{relator.nome}</p>
+                  <p className="text-muted-foreground">
+                    {relator.perfil}
+                    {relator.apartamento && ` · Apto ${relator.apartamento}`}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
             <div className="flex items-start gap-2.5">
               <MessageCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
               <p className="text-sm">
@@ -130,24 +167,24 @@ function OcorrenciaPage() {
               </p>
             </div>
           </div>
-          {o.relator.celular ? (
+          {relator?.celular ? (
             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2">
-              <span className="font-mono text-sm">{formatarTelefone(o.relator.celular)}</span>
+              <span className="font-mono text-sm">{formatarTelefone(relator.celular)}</span>
               <Button asChild size="sm" className="h-9">
-                <a href={`tel:+55${o.relator.celular}`}>
+                <a href={`tel:+55${relator.celular}`}>
                   <Phone />
                   Ligar
                 </a>
               </Button>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-muted-foreground">Telefone não informado.</p>
+            relator && <p className="mt-3 text-sm text-muted-foreground">Telefone não informado.</p>
           )}
         </Secao>
 
-        <PrioridadeSecao key={`p-${o.prioridade}`} ocorrencia={o} />
+        {demonstracao && <PrioridadeSecao key={`p-${o.prioridade}`} ocorrencia={o} />}
 
-        {o.status !== "concluida" && <DecisaoSecao ocorrencia={o} />}
+        {demonstracao && o.status !== "concluida" && <DecisaoSecao ocorrencia={o} />}
 
         <Historico ocorrencia={o} />
       </main>
