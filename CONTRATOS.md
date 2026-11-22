@@ -278,3 +278,9 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
 - Vem por ordem de chegada, da mais antiga para a mais nova (`criadaEm` e depois `id`). A ordenação da fila por prioridade não é feita aqui.
 - Sem nenhuma ocorrência, a resposta é `{ "ok": true, "ocorrencias": [] }`.
 - Não há mensagens de erro de validação, porque a função não recebe campos.
+
+### Rota
+
+`GET /ocorrencias` (`backend/rotas/fila.py`) devolve a saída acima com status 200. Cada chamada consulta o banco de novo, então é essa rota que a tela chama ao abrir e em "Atualizar". Não recebe parâmetros.
+
+Se o banco não responder, devolve status 503 com `{ "ok": false, "erros": { "banco": "Não foi possível buscar a fila agora. Tente de novo." } }`, sem detalhes do erro.
