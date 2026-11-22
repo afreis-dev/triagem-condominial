@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { AuthGuard } from "@/components/AuthGuard";
+import { sair } from "@/lib/auth";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { ColarMensagemDialog } from "@/components/fila/ColarMensagemDialog";
@@ -56,8 +58,16 @@ export const Route = createFileRoute("/fila")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: FilaPage,
+  component: FilaProtegida,
 });
+
+function FilaProtegida() {
+  return (
+    <AuthGuard>
+      <FilaPage />
+    </AuthGuard>
+  );
+}
 
 function FilaPage() {
   const search = Route.useSearch();
@@ -71,7 +81,8 @@ function FilaPage() {
 
   const contagemAbas = useMemo(() => {
     const c = {} as Record<Status, number>;
-    for (const st of STATUS) c[st.id] = filtrarOcorrencias(todas, { status: st.id, condominio }).length;
+    for (const st of STATUS)
+      c[st.id] = filtrarOcorrencias(todas, { status: st.id, condominio }).length;
     return c;
   }, [todas, condominio]);
 
@@ -105,7 +116,19 @@ function FilaPage() {
               </p>
               <h1 className="truncate text-lg font-semibold leading-tight">Fila de ocorrências</h1>
             </div>
-            <ColarMensagemDialog onSubmit={colar} />
+            <div className="flex items-center gap-2">
+              <ColarMensagemDialog onSubmit={colar} />
+              <button
+                type="button"
+                onClick={() => {
+                  sair();
+                  navigate({ to: "/login" });
+                }}
+                className="rounded-md border px-3 py-2 text-sm font-medium"
+              >
+                Sair
+              </button>
+            </div>
           </div>
           <nav role="tablist" aria-label="Status" className="-mb-px mt-3 flex">
             {STATUS.map((s) => {
@@ -127,7 +150,9 @@ function FilaPage() {
                   <span
                     className={cn(
                       "rounded-full px-1.5 font-mono text-[11px] leading-5 tabular-nums",
-                      ativo ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                      ativo
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground",
                     )}
                   >
                     {contagemAbas[s.id]}
@@ -158,8 +183,8 @@ function FilaPage() {
         ) : (
           <>
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              {lista.length} {lista.length === 1 ? "ocorrência" : "ocorrências"} · página {pagina} de{" "}
-              {totalPaginas}
+              {lista.length} {lista.length === 1 ? "ocorrência" : "ocorrências"} · página {pagina}{" "}
+              de {totalPaginas}
             </p>
             <ul className="grid gap-2.5 lg:grid-cols-2 lg:gap-3">
               {itens.map((o) => (

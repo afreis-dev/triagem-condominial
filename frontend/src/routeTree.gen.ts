@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FilaRouteImport } from './routes/fila'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as CIdentificadorRouteImport } from './routes/c.$identificador'
 import { Route as OcorrenciaIdRouteImport } from './routes/ocorrencia.$id'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const FilaRoute = FilaRouteImport.update({
   id: '/fila',
   path: '/fila',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CIdentificadorRoute = CIdentificadorRouteImport.update({
@@ -38,12 +44,14 @@ const OcorrenciaIdRoute = OcorrenciaIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/fila': typeof FilaRoute
+  '/login': typeof LoginRoute
   '/c/$identificador': typeof CIdentificadorRoute
   '/ocorrencia/$id': typeof OcorrenciaIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/fila': typeof FilaRoute
+  '/login': typeof LoginRoute
   '/c/$identificador': typeof CIdentificadorRoute
   '/ocorrencia/$id': typeof OcorrenciaIdRoute
 }
@@ -51,20 +59,28 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/fila': typeof FilaRoute
+  '/login': typeof LoginRoute
   '/c/$identificador': typeof CIdentificadorRoute
   '/ocorrencia/$id': typeof OcorrenciaIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/fila' | '/c/$identificador' | '/ocorrencia/$id'
+  fullPaths: '/' | '/fila' | '/login' | '/c/$identificador' | '/ocorrencia/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/fila' | '/c/$identificador' | '/ocorrencia/$id'
-  id: '__root__' | '/' | '/fila' | '/c/$identificador' | '/ocorrencia/$id'
+  to: '/' | '/fila' | '/login' | '/c/$identificador' | '/ocorrencia/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/fila'
+    | '/login'
+    | '/c/$identificador'
+    | '/ocorrencia/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FilaRoute: typeof FilaRoute
+  LoginRoute: typeof LoginRoute
   CIdentificadorRoute: typeof CIdentificadorRoute
   OcorrenciaIdRoute: typeof OcorrenciaIdRoute
 }
@@ -83,6 +99,13 @@ declare module '@tanstack/react-router' {
       path: '/fila'
       fullPath: '/fila'
       preLoaderRoute: typeof FilaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$identificador': {
@@ -105,6 +128,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FilaRoute: FilaRoute,
+  LoginRoute: LoginRoute,
   CIdentificadorRoute: CIdentificadorRoute,
   OcorrenciaIdRoute: OcorrenciaIdRoute,
 }
