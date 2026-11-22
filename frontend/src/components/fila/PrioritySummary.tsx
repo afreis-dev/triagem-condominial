@@ -1,6 +1,7 @@
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { PRIORIDADES, type Prioridade } from "@/lib/ocorrencias";
+import { PriorityBadge } from "./PriorityBadge";
 
 const tile = cva(
   "group flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-2.5 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -19,17 +20,6 @@ const tile = cva(
     },
   },
 );
-
-const dot = cva("size-2 rounded-full", {
-  variants: {
-    prioridade: {
-      urgente: "bg-urgente",
-      alta: "bg-alta",
-      normal: "bg-normal",
-      baixa: "bg-baixa",
-    },
-  },
-});
 
 export function PrioritySummary({
   contagem,
@@ -52,12 +42,7 @@ export function PrioritySummary({
             onClick={() => onSelect(ativo ? undefined : p.id)}
             className={tile({ prioridade: p.id, ativo })}
           >
-            <span className="flex items-center gap-1.5">
-              <span className={dot({ prioridade: p.id })} aria-hidden />
-              <span className="truncate text-[11px] font-semibold uppercase tracking-wide">
-                {p.label}
-              </span>
-            </span>
+            <PriorityBadge prioridade={p.id} />
             <span className="font-mono text-2xl font-semibold leading-none tabular-nums">
               {contagem[p.id]}
             </span>
