@@ -45,12 +45,11 @@ def colar(body: ColarBody):
         "texto_colado": body.texto_colado,
         "nome": body.nome,
         "celular": body.celular,
-        "origem": body.origem or "whatsApp_sindico",
+        "origem": body.origem or "whatsapp_sindico",
     }
     conn = conectar()
     try:
         resultado = salvar_ocorrencia(dados, conn)
-        # Se a função devolver {"erros": [...]} vira 400
         if isinstance(resultado, dict) and resultado.get("erros"):
             raise HTTPException(status_code=400, detail=resultado["erros"])
         return resultado
@@ -109,7 +108,7 @@ def buscar_ocorrencia(id: str):
     finally:
         conn.close()
 
-#Endpoint - H14
+# Endpoint - H14
 @app.get("/ocorrencias/{id}/decisoes")
 def listar_decisoes(id: str):
     oid = _validar_uuid(id)
@@ -119,7 +118,7 @@ def listar_decisoes(id: str):
     finally:
         conn.close()
 
-#Endpoint - H13
+# Endpoint - H13
 @app.patch("/ocorrencias/{id}/concluir")
 def concluir(id: str):
     oid = _validar_uuid(id)
@@ -132,6 +131,7 @@ def concluir(id: str):
     finally:
         conn.close()
 
+# H10
 @app.patch("/ocorrencias/{id}/prioridade")
 def alterar_prioridade(id: str, body: PrioridadeBody):
     oid = _validar_uuid(id)
@@ -162,12 +162,10 @@ def alterar_prioridade(id: str, body: PrioridadeBody):
         except Exception as e:
             print("Aviso registrar_decisao:", e)
         return {"id": str(r[0]), "prioridade": r[1]}
-    
     finally:
         conn.close()
 
-# H01
-
+# H01 - Formulário do morador
 class OcorrenciaFormBody(BaseModel):
     perfil: str
     nome: Optional[str] = None
