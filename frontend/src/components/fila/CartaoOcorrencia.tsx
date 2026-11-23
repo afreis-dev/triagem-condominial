@@ -29,7 +29,7 @@ const barra: Record<Ocorrencia["prioridade"], string> = {
 type DadosCartao = Pick<
   Ocorrencia,
   "condominioId" | "minutosAtras" | "titulo" | "motivo"
-> & { id: number | string; origem: string; condominio?: string; prioridade: Ocorrencia["prioridade"] | null };
+> & { id: number | string; origem: string; condominio?: string; prioridade: Ocorrencia["prioridade"] | null; marcaAcao?: string | null };
 
 export function CartaoOcorrencia({ ocorrencia }: { ocorrencia: DadosCartao }) {
   const origem = ORIGENS_API[ocorrencia.origem] ?? ocorrencia.origem;
@@ -74,9 +74,14 @@ export function CartaoOcorrencia({ ocorrencia }: { ocorrencia: DadosCartao }) {
       <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
         <span className="font-medium text-foreground/80">Motivo:</span> {ocorrencia.motivo}
       </p>
+      {ocorrencia.marcaAcao && (
+        <p className="mt-2 text-sm font-semibold text-primary">{ocorrencia.marcaAcao}</p>
+      )}
     </>
   );
-  if (typeof ocorrencia.id === "string") return <article className={classe}>{conteudo}</article>;
+  if (typeof ocorrencia.id === "string" && !ocorrencia.id.startsWith("h11-")) {
+    return <article className={classe}>{conteudo}</article>;
+  }
   return (
     <Link to="/ocorrencia/$id" params={{ id: String(ocorrencia.id) }} className={classe}>
       {conteudo}
