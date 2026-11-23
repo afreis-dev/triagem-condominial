@@ -1,4 +1,7 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from contextlib import closing
+from importlib import import_module
 from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
 import psycopg2
@@ -6,7 +9,7 @@ import os
 import unicodedata
 import re
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 load_dotenv()
 
@@ -229,66 +232,57 @@ def concluir_ocorrencia(id: str):
     return {"id": str(atualizado[0]), "status": atualizado[1]}
 
 class OcorrenciaFormBody(BaseModel):
-    perfil: str
+    perfil: Literal["morador", "proprietario", "funcionario"]
     nome: Optional[str] = None
     apartamento: Optional[str] = None
     celular: Optional[str] = None
     local: Optional[str] = None
     descricao: str
 
-def _buscar_condominio_por_slug(identificador: str, conn):
-    cur = conn.cursor()
-    # id já é o slug: 'aurora', 'vista-verde', 'palmeiras'
-    cur.execute("SELECT id, nome FROM condominios WHERE LOWER(id) = LOWER(%s)", (identificador,))
-    row = cur.fetchone()
-    if row:
-        cur.close()
-        return row
-    # fallback: busca por nome
-    cur.execute("SELECT id, nome FROM condominios WHERE LOWER(nome) = LOWER(%s)", (identificador,))
-    row = cur.fetchone()
-    cur.close()
-    return row
+def _conectar_h01():
+    url = os.getenv("H01_DATABASE_URL")
+    if url:
+        return psycopg2.connect(url)
+    return get_db()
+
+
+def _buscar_condominio_por_slug(identificador: str, conexao):
+    with conexao.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, nome FROM condominios WHERE identificador = %s",
+            (identificador,),
+        )
+        condominio = cursor.fetchone()
+    if condominio is None:
+        raise HTTPException(status_code=404, detail="condomínio não encontrado")
+    return condominio
 
 @app.get("/api/condominios/{identificador}")
 def get_condominio_api(identificador: str):
-    conn = get_db()
-    try:
-        row = _buscar_condominio_por_slug(identificador, conn)
-        if not row:
-            raise HTTPException(status_code=404, detail="condomínio não encontrado")
-        return {"id": row[0], "nome": row[1]}
-    finally:
-        conn.close()
+    with closing(_conectar_h01()) as conexao:
+        condominio_id, nome = _buscar_condominio_por_slug(identificador, conexao)
+    return {"id": condominio_id, "nome": nome}
 
 @app.post("/api/condominios/{identificador}/ocorrencias", status_code=201)
 def criar_ocorrencia_form(identificador: str, body: OcorrenciaFormBody):
-    conn = get_db()
+    pacote = f"{__package__}.lib" if __package__ else "lib"
+    modulo = f"{pacote}.salvar_ocorrencia"
     try:
-        row = _buscar_condominio_por_slug(identificador, conn)
-        if not row:
-            raise HTTPException(status_code=404, detail="condomínio não encontrado")
-        resultado = classificar(body.descricao)
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO ocorrencias
-            (texto_original, condominio_id, nome_remetente, celular_remetente, origem, prioridade, categoria, responsavel_sugerido, motivo)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            body.descricao,
-            str(row[0]),
-            body.nome,
-            body.celular,
-            body.perfil,
-            resultado["prioridade"],
-            resultado["categoria"],
-            resultado["responsavel"],
-            resultado["motivo"]
-        ))
-        id_novo = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-        return {"ok": True, "ocorrenciaId": str(id_novo), "protocolo": str(id_novo)[:8]}
-    finally:
-        conn.close()
+        salvar_ocorrencia = import_module(modulo).salvar_ocorrencia
+    except ModuleNotFoundError as erro:
+        if erro.name not in {pacote, modulo}:
+            raise
+        raise HTTPException(status_code=503, detail="Persistência da H01 indisponível") from erro
+
+    with closing(_conectar_h01()) as conexao, conexao:
+        condominio_id, _ = _buscar_condominio_por_slug(identificador, conexao)
+        if body.perfil != "funcionario" and not (body.apartamento or "").strip():
+            return JSONResponse(content={"ok": False, "erros": {"apartamento": "Informe o apartamento"}})
+        dados = body.model_dump(exclude={"perfil"})
+        resultado = salvar_ocorrencia(
+            {**dados, "condominioId": condominio_id, "origem": body.perfil},
+            conexao=conexao,
+        )
+    if not resultado["ok"]:
+        return JSONResponse(content=resultado)
+    return resultado
