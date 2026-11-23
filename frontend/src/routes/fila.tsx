@@ -17,6 +17,7 @@ import {
   type Prioridade,
   type Status,
 } from "@/lib/ocorrencias";
+import { useFilaApi } from "@/lib/fila-api";
 import { adicionarMensagem, useOcorrencias } from "@/lib/ocorrencias-store";
 import { cn } from "@/lib/utils";
 
@@ -30,9 +31,7 @@ interface FilaSearch {
 export const Route = createFileRoute("/fila")({
   validateSearch: (s: Record<string, unknown>): FilaSearch => {
     const aba = STATUS.some((x) => x.id === s["aba"]) ? (s["aba"] as Status) : undefined;
-    const condominio = CONDOMINIOS.some((c) => c.id === s["condominio"])
-      ? (s["condominio"] as string)
-      : undefined;
+    const condominio = typeof s["condominio"] === "string" ? s["condominio"] : undefined;
     const prioridade = PRIORIDADES.some((p) => p.id === s["prioridade"])
       ? (s["prioridade"] as Prioridade)
       : undefined;
@@ -62,7 +61,15 @@ export const Route = createFileRoute("/fila")({
 function FilaPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const todas = useOcorrencias();
+  const fila = useFilaApi();
+  const ocorrenciasDemo = useOcorrencias();
+  const demonstracao = fila.isError && !fila.data;
+  const todas = fila.data ?? ocorrenciasDemo;
+  const condominios = useMemo(() => {
+    if (!fila.data) return CONDOMINIOS;
+    const nomes = new Map(fila.data.map((o) => [o.condominioId, o.condominioNome ?? o.condominioId]));
+    return Array.from(nomes, ([id, nome]) => ({ id, nome }));
+  }, [fila.data]);
   const aba = search.aba ?? "nova";
   const { condominio, prioridade } = search;
 
@@ -94,6 +101,14 @@ function FilaPage() {
     toast.success("Ocorrência criada", { description: nova.titulo });
   }
 
+  if (fila.isPending) {
+    return (
+      <p role="status" className="py-10 text-center">
+        Carregando fila…
+      </p>
+    );
+  }
+
   return (
     <div className="min-h-screen pb-10">
       <header className="sticky top-0 z-20 border-b bg-surface/95 shadow-bar backdrop-blur supports-[backdrop-filter]:bg-surface/80">
@@ -105,7 +120,7 @@ function FilaPage() {
               </p>
               <h1 className="truncate text-lg font-semibold leading-tight">Fila de ocorrências</h1>
             </div>
-            <ColarMensagemDialog onSubmit={colar} />
+            {demonstracao && <ColarMensagemDialog onSubmit={colar} />}
           </div>
           <nav role="tablist" aria-label="Status" className="-mb-px mt-3 flex">
             {STATUS.map((s) => {
@@ -145,7 +160,9 @@ function FilaPage() {
           selecionada={prioridade}
           onSelect={(p) => set({ prioridade: p })}
         />
+        {demonstracao && <p role="status">API indisponível. Exibindo dados de demonstração.</p>}
         <FilterBar
+          condominios={condominios}
           condominio={condominio}
           prioridade={prioridade}
           onCondominio={(v) => set({ condominio: v })}
@@ -164,7 +181,7 @@ function FilaPage() {
             <ul className="grid gap-2.5 lg:grid-cols-2 lg:gap-3">
               {itens.map((o) => (
                 <li key={o.id}>
-                  <CartaoOcorrencia ocorrencia={o} />
+                  <CartaoOcorrencia ocorrencia={o} demonstracao={demonstracao} />
                 </li>
               ))}
             </ul>
