@@ -17,6 +17,13 @@ MENSAGEM_BANCO = "Não foi possível buscar a fila agora. Tente de novo."
 def cliente():
     app = FastAPI()
     app.include_router(modulo.router)
+
+    app.dependency_overrides[modulo.sindico_autenticado] = lambda: {
+        "id": 1,
+        "nome": "Síndico Teste",
+        "email": "sindico@teste.com",
+    }
+
     return TestClient(app)
 
 
@@ -35,7 +42,7 @@ def inserir(conexao, condominio_id, descricao, prioridade):
 
 def test_devolve_o_que_listar_fila_devolve(cliente, monkeypatch):
     resposta_da_funcao = {"ok": True, "ocorrencias": [{"id": 1, "protocolo": "TS-000001"}]}
-    monkeypatch.setattr(modulo, "listar_fila", lambda: resposta_da_funcao)
+    monkeypatch.setattr(modulo, "listar_fila", lambda sindico_id: resposta_da_funcao)
     resposta = cliente.get("/ocorrencias")
     assert resposta.status_code == 200
     assert resposta.json() == resposta_da_funcao
@@ -44,7 +51,7 @@ def test_devolve_o_que_listar_fila_devolve(cliente, monkeypatch):
 def test_cada_chamada_busca_de_novo(cliente, monkeypatch):
     chamadas = []
 
-    def falsa():
+    def falsa(sindico_id):
         chamadas.append(1)
         return {"ok": True, "ocorrencias": [{"id": n} for n in range(len(chamadas))]}
 
@@ -67,7 +74,7 @@ def test_so_aceita_get(cliente):
     ],
 )
 def test_banco_fora_do_ar_devolve_503_sem_expor_o_erro(cliente, monkeypatch, erro):
-    def falha():
+    def falha(sindico_id):
         raise erro
 
     monkeypatch.setattr(modulo, "listar_fila", falha)
@@ -79,7 +86,7 @@ def test_banco_fora_do_ar_devolve_503_sem_expor_o_erro(cliente, monkeypatch, err
 
 
 def test_outro_erro_nao_e_escondido(cliente, monkeypatch):
-    def falha():
+    def falha(sindico_id):
         raise ValueError("bug")
 
     monkeypatch.setattr(modulo, "listar_fila", falha)
@@ -88,7 +95,7 @@ def test_outro_erro_nao_e_escondido(cliente, monkeypatch):
 
 
 def test_nova_urgente_aparece_ao_buscar_de_novo(cliente, conexao, condominio, monkeypatch):
-    monkeypatch.setattr(modulo, "listar_fila", lambda: listar_fila(conexao=conexao))
+    monkeypatch.setattr(modulo, "listar_fila", lambda sindico_id: listar_fila(sindico_id, conexao=conexao))
     assert cliente.get("/ocorrencias").json() == {"ok": True, "ocorrencias": []}
 
     inserir(conexao, condominio, "Lâmpada do hall queimada", "normal")
@@ -99,3 +106,13 @@ def test_nova_urgente_aparece_ao_buscar_de_novo(cliente, conexao, condominio, mo
     depois = cliente.get("/ocorrencias").json()["ocorrencias"]
     assert len(depois) == 2
     assert [o for o in depois if o["id"] == urgente_id][0]["prioridade"] == "urgente"
+
+
+def test_rota_exige_autenticacao():
+    app = FastAPI()
+    app.include_router(modulo.router)
+
+    cliente = TestClient(app)
+    resposta = cliente.get("/ocorrencias")
+
+    assert resposta.status_code == 401

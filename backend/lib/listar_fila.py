@@ -8,9 +8,10 @@ CONSULTA = """
            (SELECT r.acao FROM registros_decisao r
              WHERE r.ocorrencia_id = o.id AND r.tipo = 'acao'
              ORDER BY r.data_hora DESC, r.id DESC LIMIT 1)
-      FROM ocorrencias o
-      JOIN condominios c ON c.id = o.condominio_id
-     ORDER BY o.criada_em, o.id
+    FROM ocorrencias o
+    JOIN condominios c ON c.id = o.condominio_id
+    WHERE c.sindico_id = %s
+    ORDER BY o.criada_em, o.id
 """
 
 CAMPOS = (
@@ -38,14 +39,14 @@ def _cartao(linha):
     return cartao
 
 
-def listar_fila(conexao=None):
-    """Busca no banco as ocorrências de todos os condomínios com os campos do cartão. Só lê, não grava nada."""
+def listar_fila(sindico_id: int, conexao=None):
+    """Busca apenas as ocorrências dos condomínios do síndico autenticado."""
     proprio = conexao is None
     if proprio:
         conexao = conectar()
     try:
         with conexao.cursor() as cur:
-            cur.execute(CONSULTA)
+            cur.execute(CONSULTA, (sindico_id,))
             linhas = cur.fetchall()
         return {"ok": True, "ocorrencias": [_cartao(linha) for linha in linhas]}
     finally:
