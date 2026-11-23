@@ -134,8 +134,8 @@ def colar_mensagem(dados: ColarMensagemRequest):
     try:
         cur.execute("""
             INSERT INTO ocorrencias
-            (texto_original, condominio_id, nome_remetente, celular_remetente, origem, prioridade, categoria, responsavel_sugerido, motivo)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (texto_original, condominio_id, nome_remetente, celular_remetente, origem, prioridade, categoria, responsavel_sugerido, motivo, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'Em andamento')
             RETURNING id
         """, (
             dados.texto_colado,
@@ -214,7 +214,7 @@ def concluir_ocorrencia(id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
 
-        if row[0] != "Em andamento":
+        if row[0] not in ("Em andamento"):
             raise HTTPException(status_code=400, detail="Só dá pra concluir quem está Em andamento")
 
         cur.execute(
@@ -244,7 +244,6 @@ def _buscar_condominio_por_slug(identificador: str, conn):
     if row:
         cur.close()
         return row
-    # fallback: busca por nome
     cur.execute("SELECT id, nome FROM condominios WHERE LOWER(nome) = LOWER(%s)", (identificador,))
     row = cur.fetchone()
     cur.close()
