@@ -23,6 +23,11 @@ Projeto da Squad 03 no bootcamp.
 | `CONTRATOS.md` | Contrato de cada função: entrada, saída e erros |
 | `docker-compose.yml` e `database/` | Postgres local com Docker e migrations (Alembic) |
 | `docs/guia-desenvolvimento.md` | Passo a passo para configurar o ambiente local e integrar as partes |
+| `docs/banco-de-dados/` | Documentação técnica, modelagem e guia do banco |
+| `scripts/` | Automação de seeds e testes do banco |
+| `tests/` | Testes automatizados de migration, seed e persistência |
+| `pyproject.toml` | Comandos de desenvolvimento com Taskipy |
+
 
 ## Como começar
 
@@ -65,6 +70,32 @@ Variáveis de ambiente, como a `DATABASE_URL`, ficam num `.env` local. O `.env` 
 - `develop`: branch de integração, onde o time trabalha.
 - Ninguém envia alteração direto para a `main` nem para a `develop`. Tudo entra por pull request.
 - Commits no formato `tipo: o que mudou (SQU-00)`, com `feat`, `fix`, `docs` ou `chore`.
+
+### Banco de dados
+
+O PostgreSQL é executado localmente via Docker Compose, com migrations gerenciadas pelo Alembic.
+
+Após configurar o `.env`, ativar o ambiente virtual e instalar as dependências de desenvolvimento:
+
+```bash
+python -m pip install -r backend/requirements-dev.txt
+task db-up
+```
+
+Aguarde o PostgreSQL ficar saudável e execute:
+
+```bash
+task db-migrate
+task db-seed
+```
+
+Para executar os testes automatizados:
+
+```bash
+task db-test
+```
+
+Consulte o [Guia do banco de dados](./docs/banco-de-dados/README.md) para obter as instruções completas, a lista de comandos e a documentação da modelagem.
 
 ## Da tarefa ao pull request
 
