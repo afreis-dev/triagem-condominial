@@ -1,4 +1,4 @@
-from main import classificar
+from lib.classificar import classificar
 
 def check(texto, prioridade, categoria, responsavel):
     r = classificar(texto)
