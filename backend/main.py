@@ -6,7 +6,9 @@ import os
 import unicodedata
 import re
 import uuid
-from typing import Optional
+from typing import Literal, Optional
+from datetime import date
+from contextlib import closing
 
 load_dotenv()
 
@@ -168,7 +170,10 @@ def listar_ocorrencias():
     try:
         cur.execute("""
             SELECT id, texto_original, condominio_id, prioridade, categoria,
-                   responsavel_sugerido, motivo, origem, status, created_at
+                   responsavel_sugerido, motivo, origem, status, created_at,
+                   (SELECT r.marca_acao FROM registros_decisao r
+                    WHERE r.ocorrencia_id = ocorrencias.id AND r.tipo = 'acao'
+                    ORDER BY r.criado_em DESC, r.id DESC LIMIT 1)
             FROM ocorrencias
             ORDER BY
               CASE prioridade
@@ -195,9 +200,90 @@ def listar_ocorrencias():
             "origem": r[7],
             "status": r[8],
             "created_at": str(r[9]),
+            "marcaAcao": r[10],
         }
         for r in rows
     ]
+
+class DecisaoAcao(BaseModel):
+    acao: Literal["delegar", "agendar", "eu_mesmo"]
+    responsavel: str | None = None
+    dataAgendada: date | None = None
+    nota: str = Field(default="", max_length=500)
+
+
+def consultar_ocorrencia_acao(cursor, id: uuid.UUID, *, bloquear: bool = False):
+    consulta = """
+        SELECT condominio_id, responsavel_sugerido, status
+        FROM ocorrencias WHERE id = %s
+    """
+    if bloquear:
+        consulta += " FOR UPDATE"
+    cursor.execute(consulta, (str(id),))
+    ocorrencia = cursor.fetchone()
+    if ocorrencia is None:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    return ocorrencia
+
+
+@app.get("/ocorrencias/{id}/responsaveis")
+def listar_responsaveis_ocorrencia(id: uuid.UUID):
+    with closing(get_db()) as conn, conn.cursor() as cursor:
+        condominio_id, sugerido, _ = consultar_ocorrencia_acao(cursor, id)
+        cursor.execute(
+            "SELECT papel FROM responsaveis WHERE condominio_id = %s ORDER BY papel",
+            (condominio_id,),
+        )
+        responsaveis = [linha[0] for linha in cursor.fetchall()]
+    return {
+        "responsaveis": responsaveis,
+        "responsavelSugerido": sugerido if sugerido in responsaveis else None,
+    }
+
+
+def registrar_decisao(cursor, id, acao, responsavel, data_agendada, nota, marca):
+    cursor.execute(
+        """
+        INSERT INTO registros_decisao
+            (ocorrencia_id, tipo, acao, responsavel, data_agendada, nota, marca_acao)
+        VALUES (%s, 'acao', %s, %s, %s, %s, %s)
+        """,
+        (str(id), acao, responsavel, data_agendada, nota, marca),
+    )
+
+
+@app.post("/ocorrencias/{id}/acoes", status_code=201)
+def confirmar_acao(id: uuid.UUID, decisao: DecisaoAcao):
+    responsavel = decisao.responsavel if decisao.acao == "delegar" else None
+    data_agendada = decisao.dataAgendada if decisao.acao == "agendar" else None
+    if decisao.acao == "agendar" and data_agendada is None:
+        raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
+
+    with closing(get_db()) as conn, conn, conn.cursor() as cursor:
+        condominio_id, _, status = consultar_ocorrencia_acao(cursor, id, bloquear=True)
+        if status != "Nova":
+            raise HTTPException(status_code=409, detail="A ocorrência precisa estar em Nova")
+
+        if decisao.acao == "delegar":
+            cursor.execute(
+                "SELECT papel FROM responsaveis WHERE condominio_id = %s AND papel = %s",
+                (condominio_id, responsavel),
+            )
+            if cursor.fetchone() is None:
+                raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio")
+            marca = f"Delegado: {responsavel}"
+        elif data_agendada is not None:
+            marca = f"Agendado para {data_agendada:%d/%m}"
+        else:
+            marca = "Responsável: você"
+
+        registrar_decisao(
+            cursor, id, decisao.acao, responsavel, data_agendada, decisao.nota.strip(), marca
+        )
+        cursor.execute("UPDATE ocorrencias SET status = 'Em andamento' WHERE id = %s", (str(id),))
+
+    return {"id": str(id), "status": "Em andamento", "marcaAcao": marca}
+
 
 @app.patch("/ocorrencias/{id}/concluir")
 def concluir_ocorrencia(id: str):
