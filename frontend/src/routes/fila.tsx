@@ -12,6 +12,7 @@ import { Paginacao } from "@/components/fila/Paginacao";
 import { PrioritySummary } from "@/components/fila/PrioritySummary";
 import { Button } from "@/components/ui/button";
 import { buscarFila } from "@/lib/fila-api";
+import { buscarFilaH11, h11Local } from "@/lib/h11-api";
 import {
   CONDOMINIOS,
   PRIORIDADES,
@@ -74,14 +75,14 @@ function FilaPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const locais = useOcorrencias();
-  const [reais, setReais] = useState<Awaited<ReturnType<typeof buscarFila>>>([]);
+  const [reais, setReais] = useState<Awaited<ReturnType<typeof buscarFila | typeof buscarFilaH11>>>([]);
   const [busca, setBusca] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string>();
 
   useEffect(() => {
     const controller = new AbortController();
-    buscarFila(controller.signal)
+    (h11Local ? buscarFilaH11 : buscarFila)(controller.signal)
       .then((lista) => {
         if (!controller.signal.aborted) setReais(lista);
       })

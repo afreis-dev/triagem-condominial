@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   CheckCheck,
@@ -9,6 +10,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AuthGuard } from "@/components/AuthGuard";
 import { DecisaoSecao } from "@/components/ocorrencia/DecisaoSecao";
 import { Historico } from "@/components/ocorrencia/Historico";
 import { PrioridadeSecao } from "@/components/ocorrencia/PrioridadeSecao";
@@ -25,6 +27,7 @@ import {
   tempoDecorrido,
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia, useOcorrencias } from "@/lib/ocorrencias-store";
+import { buscarFilaH11, h11Local } from "@/lib/h11-api";
 
 export const Route = createFileRoute("/ocorrencia/$id")({
   head: ({ params }) => ({
@@ -43,6 +46,68 @@ export const Route = createFileRoute("/ocorrencia/$id")({
 
 function OcorrenciaPage() {
   const { id } = Route.useParams();
+  if (h11Local && id.startsWith("h11-")) {
+    return <AuthGuard><DetalheH11 key={id} id={id} /></AuthGuard>;
+  }
+  return <DetalheLocal id={id} />;
+}
+
+function DetalheH11({ id }: { id: string }) {
+  const navigate = Route.useNavigate();
+  const [resultado, setResultado] = useState<
+    Awaited<ReturnType<typeof buscarFilaH11>>[number] | null | undefined
+  >();
+  const [falhou, setFalhou] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    buscarFilaH11(controller.signal)
+      .then((ocorrencias) => {
+        if (!controller.signal.aborted) setResultado(ocorrencias.find((item) => item.id === id) ?? null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFalhou(true);
+      });
+    return () => controller.abort();
+  }, [id]);
+
+  return (
+    <main className="mx-auto grid max-w-3xl gap-4 px-4 py-6 sm:px-6">
+      <div>
+        <Button asChild variant="outline">
+          <Link to="/fila"><ArrowLeft /> Voltar para a fila</Link>
+        </Button>
+      </div>
+      {falhou && <p role="alert">Não foi possível carregar a ocorrência.</p>}
+      {!falhou && resultado === undefined && <p role="status">Carregando ocorrência…</p>}
+      {resultado === null && <p>Ocorrência não encontrada.</p>}
+      {resultado && (
+        <>
+          <header className="flex flex-wrap items-center gap-3">
+            <h1 className="text-lg font-semibold">{resultado.condominio}</h1>
+            {resultado.prioridade && <PriorityBadge prioridade={resultado.prioridade} />}
+            <span>{STATUS.find((status) => status.id === resultado.status)?.label}</span>
+          </header>
+          <Secao titulo="Por que está aqui" icone={<Lightbulb className="size-4" />}>
+            <p>{resultado.motivo || "Motivo indisponível"}</p>
+          </Secao>
+          <Secao titulo="Descrição" icone={<FileText className="size-4" />}>
+            <p className="whitespace-pre-wrap">{resultado.titulo}</p>
+          </Secao>
+          {resultado.status === "nova" && (
+            <DecisaoSecao
+              idReal={id.slice("h11-".length)}
+              aoRegistrar={() => void navigate({ to: "/fila", search: { aba: "andamento" } })}
+            />
+          )}
+          {resultado.marcaAcao && <p className="font-semibold">{resultado.marcaAcao}</p>}
+        </>
+      )}
+    </main>
+  );
+}
+
+function DetalheLocal({ id }: { id: string }) {
   const o = useOcorrencias().find((x) => String(x.id) === id);
 
   if (!o) {

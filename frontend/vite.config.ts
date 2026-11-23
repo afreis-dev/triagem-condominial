@@ -14,6 +14,12 @@ export default defineConfig({
     server: {
       proxy: {
         "/api": "http://localhost:8000",
+        ...(process.env["VITE_H11_LOCAL"] === "1" && {
+          "/h11-local": {
+            target: "http://127.0.0.1:8011",
+            rewrite: (path: string) => path.replace(/^\/h11-local/, ""),
+          },
+        }),
       },
     },
   },

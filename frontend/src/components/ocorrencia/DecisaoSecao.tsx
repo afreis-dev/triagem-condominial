@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ptBR } from "date-fns/locale";
 import { CalendarDays, CalendarIcon, ListChecks, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
   type TipoDecisao,
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia } from "@/lib/ocorrencias-store";
+import { buscarResponsaveis, registrarAcao } from "@/lib/h11-api";
 import { cn } from "@/lib/utils";
 import { ErroCampo, Secao, campoErro } from "./Secao";
 
@@ -30,31 +31,77 @@ const OPCOES: { id: TipoDecisao; label: string; icone: typeof Users }[] = [
   { id: "eu_mesmo", label: "Eu mesmo cuido", icone: UserRound },
 ];
 
-const RESPONSAVEIS: Responsavel[] = ["Zelador", "Portaria", "Síndico"];
+const RESPONSAVEIS: Responsavel[] = ["Zelador", "Portaria"];
 
 function paraData(iso: string): Date {
   const [a, m, d] = iso.split("-").map(Number);
   return new Date(a!, m! - 1, d!);
 }
 
-export function DecisaoSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
+type PropsDecisao =
+  | { ocorrencia: Ocorrencia; idReal?: never; aoRegistrar?: never }
+  | { ocorrencia?: never; idReal: string; aoRegistrar: () => void };
+
+export function DecisaoSecao({ ocorrencia, idReal, aoRegistrar }: PropsDecisao) {
   const [tipo, setTipo] = useState<TipoDecisao | undefined>(undefined);
-  const [responsavel, setResponsavel] = useState<Responsavel | undefined>(undefined);
+  const [responsavel, setResponsavel] = useState<string>();
   const [data, setData] = useState<string | undefined>(undefined);
   const [nota, setNota] = useState("");
   const [tentou, setTentou] = useState(false);
   const [calendarioAberto, setCalendarioAberto] = useState(false);
+  const [responsaveisReais, setResponsaveisReais] = useState<string[]>();
+  const [erroResponsaveis, setErroResponsaveis] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState<string>();
+  const responsaveis = idReal ? responsaveisReais : RESPONSAVEIS;
 
-  const rascunho: RascunhoDecisao = { tipo, responsavel, data, nota };
+  useEffect(() => {
+    if (!idReal || tipo !== "delegar") return;
+    const controller = new AbortController();
+    buscarResponsaveis(idReal, controller.signal)
+      .then((dados) => {
+        if (controller.signal.aborted) return;
+        const delegaveis = dados.responsaveis.filter(
+          (papel) => !["sindico", "síndico"].includes(papel.trim().toLowerCase()),
+        );
+        setResponsaveisReais(delegaveis);
+        setResponsavel(
+          dados.responsavelSugerido && delegaveis.includes(dados.responsavelSugerido)
+            ? dados.responsavelSugerido
+            : undefined,
+        );
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setErroResponsaveis(true);
+      });
+    return () => controller.abort();
+  }, [idReal, tipo]);
+
+  const rascunho: RascunhoDecisao = { tipo, responsavel: responsavel as Responsavel | undefined, data, nota };
   const todos = validarDecisao(rascunho, dataLocalISO(new Date()));
   // Past dates are flagged as soon as they are picked; other errors after a submit attempt.
   const erros: ErrosDecisao = tentou ? todos : data && todos.data ? { data: todos.data } : {};
 
-  function confirmar() {
+  async function confirmar() {
     setTentou(true);
-    if (Object.keys(validarDecisao(rascunho, dataLocalISO(new Date()))).length > 0 || !tipo) return;
+    setErroEnvio(undefined);
+    if (enviando || Object.keys(todos).length > 0 || !tipo) return;
+    if (idReal) {
+      setEnviando(true);
+      try {
+        await registrarAcao(idReal, tipo, nota, responsavel, data);
+        toast.success("Decisão registrada");
+        aoRegistrar();
+      } catch (erro) {
+        setErroEnvio(erro instanceof Error ? erro.message : "Não foi possível registrar a decisão.");
+      } finally {
+        setEnviando(false);
+      }
+      return;
+    }
+    if (!ocorrencia) return;
     atualizarOcorrencia(ocorrencia.id, (o) =>
-      aplicarDecisao(o, { tipo, responsavel, data, nota }, new Date().toISOString()),
+      aplicarDecisao(o, { tipo, responsavel: rascunho.responsavel, data, nota }, new Date().toISOString()),
     );
     toast.success("Decisão confirmada", { description: "Ocorrência movida para Em andamento." });
     setTipo(undefined);
@@ -66,7 +113,7 @@ export function DecisaoSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
 
   return (
     <Secao titulo="O que você vai fazer" icone={<ListChecks className="size-4" />}>
-      {ocorrencia.decisao && (
+      {ocorrencia?.decisao && (
         <p className="mb-3 rounded-lg bg-secondary px-3 py-2 text-sm text-secondary-foreground">
           Decisão atual: <span className="font-semibold">{descreverDecisao(ocorrencia.decisao)}</span>
         </p>
@@ -82,7 +129,16 @@ export function DecisaoSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
               type="button"
               role="radio"
               aria-checked={ativo}
-              onClick={() => setTipo(op.id)}
+              disabled={enviando}
+              onClick={() => {
+                if (idReal && op.id !== tipo) {
+                  setResponsavel(undefined);
+                  setResponsaveisReais(undefined);
+                  setErroResponsaveis(false);
+                }
+                setTipo(op.id);
+                setErroEnvio(undefined);
+              }}
               className={cn(
                 "flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 text-center text-[13px] font-semibold leading-tight transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 ativo
@@ -105,7 +161,7 @@ export function DecisaoSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
             <Label htmlFor="responsavel" className={erros.responsavel ? "text-destructive" : undefined}>
               Delegar para <span className="text-destructive">*</span>
             </Label>
-            <Select value={responsavel ?? ""} onValueChange={(v) => setResponsavel(v as Responsavel)}>
+            <Select value={responsavel ?? ""} onValueChange={setResponsavel} disabled={enviando || !responsaveis?.length}>
               <SelectTrigger
                 id="responsavel"
                 aria-invalid={Boolean(erros.responsavel)}
@@ -114,13 +170,18 @@ export function DecisaoSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
                 <SelectValue placeholder="Escolha o responsável" />
               </SelectTrigger>
               <SelectContent>
-                {RESPONSAVEIS.map((r) => (
+                {responsaveis?.map((r) => (
                   <SelectItem key={r} value={r}>
                     {r}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {idReal && !responsaveis && !erroResponsaveis && (
+              <p role="status">Carregando responsáveis…</p>
+            )}
+            {erroResponsaveis && <ErroCampo>Não foi possível buscar os responsáveis.</ErroCampo>}
+            {responsaveis?.length === 0 && <ErroCampo>Nenhum responsável cadastrado.</ErroCampo>}
             {erros.responsavel && <ErroCampo>{erros.responsavel}</ErroCampo>}
           </div>
         )}
@@ -162,7 +223,7 @@ export function DecisaoSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
                 />
               </PopoverContent>
             </Popover>
-            {erros.data && <ErroCampo>{erros.data}</ErroCampo>}
+            {erros.data && <ErroCampo>{idReal && !data ? "Escolha a data do agendamento" : erros.data}</ErroCampo>}
           </div>
         )}
 
@@ -179,7 +240,8 @@ export function DecisaoSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
           />
         </div>
 
-        <Button size="lg" className="h-12 w-full text-base" onClick={confirmar}>
+        {erroEnvio && <ErroCampo>{erroEnvio}</ErroCampo>}
+        <Button size="lg" className="h-12 w-full text-base" onClick={confirmar} disabled={enviando || (tipo === "delegar" && !responsaveis?.length)}>
           Confirmar decisão
         </Button>
       </div>
