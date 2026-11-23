@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AuthGuard } from "@/components/AuthGuard";
 import { sair } from "@/lib/auth";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { ColarMensagemDialog } from "@/components/fila/ColarMensagemDialog";
 import { CartaoOcorrencia } from "@/components/fila/CartaoOcorrencia";
@@ -9,6 +10,8 @@ import { EmptyState } from "@/components/fila/EmptyState";
 import { FilterBar } from "@/components/fila/FilterBar";
 import { Paginacao } from "@/components/fila/Paginacao";
 import { PrioritySummary } from "@/components/fila/PrioritySummary";
+import { Button } from "@/components/ui/button";
+import { buscarFila } from "@/lib/fila-api";
 import {
   CONDOMINIOS,
   PRIORIDADES,
@@ -32,9 +35,7 @@ interface FilaSearch {
 export const Route = createFileRoute("/fila")({
   validateSearch: (s: Record<string, unknown>): FilaSearch => {
     const aba = STATUS.some((x) => x.id === s["aba"]) ? (s["aba"] as Status) : undefined;
-    const condominio = CONDOMINIOS.some((c) => c.id === s["condominio"])
-      ? (s["condominio"] as string)
-      : undefined;
+    const condominio = typeof s["condominio"] === "string" ? s["condominio"] : undefined;
     const prioridade = PRIORIDADES.some((p) => p.id === s["prioridade"])
       ? (s["prioridade"] as Prioridade)
       : undefined;
@@ -72,7 +73,48 @@ function FilaProtegida() {
 function FilaPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const todas = useOcorrencias();
+  const locais = useOcorrencias();
+  const [reais, setReais] = useState<Awaited<ReturnType<typeof buscarFila>>>([]);
+  const [busca, setBusca] = useState(0);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string>();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    buscarFila(controller.signal)
+      .then((lista) => {
+        if (!controller.signal.aborted) setReais(lista);
+      })
+      .catch((falha: unknown) => {
+        if (controller.signal.aborted) return;
+        setErro(
+          falha instanceof Error && falha.message === "Sessão expirada. Entre novamente."
+            ? falha.message
+            : "Não foi possível buscar a fila. Tente atualizar.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCarregando(false);
+      });
+    return () => controller.abort();
+  }, [busca]);
+
+  function atualizar() {
+    setErro(undefined);
+    setCarregando(true);
+    setBusca((atual) => atual + 1);
+  }
+
+  const todas = useMemo(() => [...reais, ...locais.filter((o) => o.mensagem)], [reais, locais]);
+  const condominios = useMemo(() => {
+    const nomes = new Map(reais.map((o) => [o.condominioId, o.condominio]));
+    for (const local of locais) {
+      if (!local.mensagem || nomes.has(local.condominioId)) continue;
+      const condominioLocal = CONDOMINIOS.find((c) => c.id === local.condominioId);
+      if (condominioLocal) nomes.set(condominioLocal.id, condominioLocal.nome);
+    }
+    return Array.from(nomes, ([id, nome]) => ({ id, nome }));
+  }, [reais, locais]);
   const aba = search.aba ?? "nova";
   const { condominio, prioridade } = search;
 
@@ -165,6 +207,14 @@ function FilaPage() {
       </header>
 
       <main className="mx-auto flex max-w-5xl flex-col gap-4 px-4 pt-4 sm:px-6 sm:pt-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" onClick={atualizar} disabled={carregando}>
+            <RefreshCw className={carregando ? "animate-spin" : undefined} aria-hidden />
+            Atualizar
+          </Button>
+          {carregando && <p role="status">Buscando ocorrências…</p>}
+          {erro && <p role="alert">{erro}</p>}
+        </div>
         <PrioritySummary
           contagem={resumo}
           selecionada={prioridade}
@@ -172,6 +222,7 @@ function FilaPage() {
         />
         <FilterBar
           condominio={condominio}
+          condominios={condominios}
           prioridade={prioridade}
           onCondominio={(v) => set({ condominio: v })}
           onPrioridade={(v) => set({ prioridade: v })}
@@ -179,7 +230,9 @@ function FilaPage() {
         />
 
         {lista.length === 0 ? (
-          <EmptyState titulo={abaInfo.vazio} filtrosAtivos={filtrosAtivos} onLimpar={limpar} />
+          !carregando && !erro && (
+            <EmptyState titulo={abaInfo.vazio} filtrosAtivos={filtrosAtivos} onLimpar={limpar} />
+          )
         ) : (
           <>
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">

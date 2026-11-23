@@ -181,7 +181,11 @@ export interface Filtros {
 }
 
 /** Filters by tab, condo and priority; sorts by priority, then most recent. */
-export function filtrarOcorrencias(lista: Ocorrencia[], f: Filtros): Ocorrencia[] {
+export function filtrarOcorrencias<
+  T extends Pick<Ocorrencia, "status" | "condominioId" | "minutosAtras"> & {
+    prioridade: Prioridade | null;
+  },
+>(lista: T[], f: Filtros): T[] {
   return lista
     .filter(
       (o) =>
@@ -189,12 +193,18 @@ export function filtrarOcorrencias(lista: Ocorrencia[], f: Filtros): Ocorrencia[
         (!f.condominio || o.condominioId === f.condominio) &&
         (!f.prioridade || o.prioridade === f.prioridade),
     )
-    .sort((a, b) => ORDEM[a.prioridade] - ORDEM[b.prioridade] || a.minutosAtras - b.minutosAtras);
+    .sort(
+      (a, b) =>
+        (a.prioridade ? ORDEM[a.prioridade] : Infinity) -
+          (b.prioridade ? ORDEM[b.prioridade] : Infinity) || a.minutosAtras - b.minutosAtras,
+    );
 }
 
-export function contarPorPrioridade(lista: Ocorrencia[]): Record<Prioridade, number> {
+export function contarPorPrioridade(lista: { prioridade: Prioridade | null }[]): Record<Prioridade, number> {
   const out: Record<Prioridade, number> = { urgente: 0, alta: 0, normal: 0, baixa: 0 };
-  for (const o of lista) out[o.prioridade]++;
+  for (const o of lista) {
+    if (o.prioridade) out[o.prioridade]++;
+  }
   return out;
 }
 
