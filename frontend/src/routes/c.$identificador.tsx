@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Building2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   PERFIS,
+  LIMITE_DESCRICAO,
   apartamentoObrigatorio,
-  gerarProtocolo,
   mascaraCelular,
   nomeDoIdentificador,
+  somenteDigitos,
   validarChamado,
   type ChamadoForm,
   type ErrosChamado,
@@ -25,7 +26,10 @@ export const Route = createFileRoute("/c/$identificador")({
         { title: `Registrar ocorrência — ${nome}` },
         { name: "description", content: `Envie uma ocorrência ao síndico do ${nome}.` },
         { property: "og:title", content: `Registrar ocorrência — ${nome}` },
-        { property: "og:description", content: `Canal para moradores do ${nome} falarem com o síndico.` },
+        {
+          property: "og:description",
+          content: `Canal para moradores do ${nome} falarem com o síndico.`,
+        },
         { property: "og:type", content: "website" },
         { name: "twitter:card", content: "summary" },
       ],
@@ -48,21 +52,70 @@ const campoInvalido =
 
 function ChamadoPage() {
   const { identificador } = Route.useParams();
-  const condominio = nomeDoIdentificador(identificador);
+  return <ChamadoCondominio key={identificador} identificador={identificador} />;
+}
+
+type ConsultaCondominio =
+  { status: "carregando" | "invalido" | "erro" } | { status: "encontrado"; nome: string };
+
+type RespostaOcorrencia =
+  | { ok: true; ocorrenciaId: number; protocolo: string }
+  | { ok: false; erros: ErrosChamado & { condominioId?: string; origem?: string } };
+
+function ChamadoCondominio({ identificador }: { identificador: string }) {
+  const url = `/api/condominios/${encodeURIComponent(identificador)}`;
+  const [condominio, setCondominio] = useState<ConsultaCondominio>({ status: "carregando" });
   const [form, setForm] = useState<ChamadoForm>(VAZIO);
   const [tentou, setTentou] = useState(false);
   const [protocolo, setProtocolo] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [errosApi, setErrosApi] = useState<ErrosChamado>({});
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
-  const erros: ErrosChamado = tentou ? validarChamado(form) : {};
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function consultar() {
+      try {
+        const resposta = await fetch(url, { signal: controller.signal });
+        if (resposta.status === 404) {
+          if (!controller.signal.aborted) setCondominio({ status: "invalido" });
+          return;
+        }
+        if (!resposta.ok) throw new Error();
+        const { nome } = (await resposta.json()) as { id: number; nome: string };
+        if (!controller.signal.aborted) setCondominio({ status: "encontrado", nome });
+      } catch {
+        if (!controller.signal.aborted) setCondominio({ status: "erro" });
+      }
+    }
+
+    void consultar();
+    return () => controller.abort();
+  }, [url]);
+
+  const errosLocais = validarChamado(form);
+  const erroCelular = errosLocais.celular;
+  const erros: ErrosChamado = tentou
+    ? { ...errosApi, ...errosLocais }
+    : erroCelular && somenteDigitos(form.celular).length > 11
+      ? { celular: erroCelular }
+      : {};
   const aptoObrigatorio = apartamentoObrigatorio(form.perfil);
 
-  const set = <K extends keyof ChamadoForm>(k: K, v: ChamadoForm[K]) =>
+  const set = <K extends keyof ChamadoForm>(k: K, v: ChamadoForm[K]) => {
     setForm((f) => ({ ...f, [k]: v }));
+    setErrosApi({});
+    setErroEnvio(null);
+  };
 
-  function enviar(e: React.FormEvent) {
+  async function enviar(e: React.FormEvent) {
     e.preventDefault();
+    if (enviando || condominio.status !== "encontrado") return;
     setTentou(true);
+    setErrosApi({});
+    setErroEnvio(null);
     const r = validarChamado(form);
     if (Object.keys(r).length > 0) {
       requestAnimationFrame(() => {
@@ -70,8 +123,31 @@ function ChamadoPage() {
       });
       return;
     }
-    setProtocolo(gerarProtocolo());
-    window.scrollTo({ top: 0 });
+    setEnviando(true);
+    try {
+      const resposta = await fetch(`${url}/ocorrencias`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (resposta.status === 404) {
+        setCondominio({ status: "invalido" });
+        return;
+      }
+      if (!resposta.ok) throw new Error();
+      const resultado = (await resposta.json()) as RespostaOcorrencia;
+      if (resultado.ok) {
+        setProtocolo(resultado.protocolo);
+        window.scrollTo({ top: 0 });
+      } else {
+        setErrosApi(resultado.erros);
+        setErroEnvio(resultado.erros.condominioId ?? resultado.erros.origem ?? null);
+      }
+    } catch {
+      setErroEnvio("Não foi possível confirmar o registro da ocorrência.");
+    } finally {
+      setEnviando(false);
+    }
   }
 
   return (
@@ -85,13 +161,23 @@ function ChamadoPage() {
             <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Canal do condomínio
             </p>
-            <h1 className="truncate text-lg font-semibold leading-tight">{condominio}</h1>
+            {condominio.status === "encontrado" && (
+              <h1 className="truncate text-lg font-semibold leading-tight">{condominio.nome}</h1>
+            )}
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-xl px-4 pt-5 sm:px-6 sm:pt-8">
-        {protocolo ? (
+        {condominio.status === "carregando" ? (
+          <p role="status">Consultando condomínio…</p>
+        ) : condominio.status === "invalido" ? (
+          <h1 className="text-xl font-semibold">Link de condomínio inválido</h1>
+        ) : condominio.status === "erro" ? (
+          <p role="alert">
+            Não foi possível consultar o condomínio. Recarregue a página para tentar novamente.
+          </p>
+        ) : protocolo ? (
           <section
             role="status"
             className="flex flex-col items-center rounded-xl border bg-card px-6 py-10 text-center shadow-card"
@@ -127,7 +213,10 @@ function ChamadoPage() {
             <form ref={formRef} onSubmit={enviar} noValidate className="mt-5 grid gap-5">
               <fieldset className="grid gap-2">
                 <legend className="mb-2 text-sm font-medium">Você é</legend>
-                <div role="radiogroup" className="grid grid-cols-3 gap-1 rounded-lg border bg-muted p-1">
+                <div
+                  role="radiogroup"
+                  className="grid grid-cols-3 gap-1 rounded-lg border bg-muted p-1"
+                >
                   {PERFIS.map((p) => {
                     const ativo = form.perfil === p.id;
                     return (
@@ -214,7 +303,7 @@ function ChamadoPage() {
                 <Textarea
                   id="descricao"
                   rows={5}
-                  maxLength={1000}
+                  maxLength={LIMITE_DESCRICAO}
                   placeholder="Descreva o que está acontecendo"
                   value={form.descricao}
                   onChange={(e) => set("descricao", e.target.value)}
@@ -230,8 +319,18 @@ function ChamadoPage() {
                   Seus dados (nome, apartamento e celular) são usados só para o síndico responder
                   esta ocorrência.
                 </p>
-                <Button type="submit" size="lg" className="h-12 w-full text-base">
-                  Enviar ocorrência
+                {erroEnvio && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {erroEnvio}
+                  </p>
+                )}
+                <Button
+                  type="submit"
+                  disabled={enviando}
+                  size="lg"
+                  className="h-12 w-full text-base"
+                >
+                  {enviando ? "Enviando…" : "Enviar ocorrência"}
                 </Button>
               </div>
             </form>
@@ -268,7 +367,10 @@ function Campo({
       </div>
       {children}
       {erro && (
-        <p id={`${id}-erro`} className="flex items-center gap-1 text-xs font-medium text-destructive">
+        <p
+          id={`${id}-erro`}
+          className="flex items-center gap-1 text-xs font-medium text-destructive"
+        >
           <AlertCircle className="size-3.5" aria-hidden />
           {erro}
         </p>

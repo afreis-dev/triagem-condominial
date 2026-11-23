@@ -1,3 +1,5 @@
+# ⚠️ Branch temporária da squad exclusiva para testes de integração local (não abrir PR para a develop).
+
 # Triagem do Síndico
 
 Ferramenta para síndicos profissionais com muitos condomínios. Cada ocorrência que chega é classificada com prioridade, categoria, responsável sugerido e motivo. O síndico confirma só o que é urgente, aprova o resto em lote e toda decisão fica registrada.

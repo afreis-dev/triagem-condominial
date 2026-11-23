@@ -22,18 +22,20 @@ export interface ChamadoForm {
 export type CampoObrigatorio = "nome" | "apartamento" | "celular" | "descricao";
 export type ErrosChamado = Partial<Record<CampoObrigatorio | "local", string>>;
 
+export const LIMITE_DESCRICAO = 2000;
+
 export function apartamentoObrigatorio(perfil: Perfil): boolean {
   return perfil !== "funcionario";
 }
 
 export function somenteDigitos(v: string): string {
-  return v.replace(/\D/g, "").slice(0, 11);
+  return v.replace(/\D/g, "");
 }
 
 /** Brazilian phone mask: (11) 1234-5678 for 10 digits, (11) 91234-5678 for 11. */
 export function mascaraCelular(v: string): string {
   const d = somenteDigitos(v);
-  if (d.length === 0) return "";
+  if (d.length === 0 || d.length > 11) return d;
   if (d.length <= 2) return `(${d}`;
   const ddd = d.slice(0, 2);
   const resto = d.slice(2);
@@ -54,7 +56,7 @@ const schema = z.object({
     .string()
     .trim()
     .min(1, "Descreva o problema")
-    .max(1000, "Máximo de 1000 caracteres"),
+    .max(LIMITE_DESCRICAO, `Máximo de ${LIMITE_DESCRICAO} caracteres`),
 });
 
 export function validarChamado(form: ChamadoForm): ErrosChamado {
