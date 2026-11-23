@@ -171,7 +171,12 @@ def listar_ocorrencias():
         cur.execute("""
             SELECT id, texto_original, condominio_id, prioridade, categoria,
                    responsavel_sugerido, motivo, origem, status, created_at,
-                   (SELECT r.marca_acao FROM registros_decisao r
+                   (SELECT CASE WHEN r.acao = 'delegar' AND r.responsavel IS NOT NULL
+                                 THEN 'Responsável: ' || CASE
+                                     WHEN lower(trim(r.responsavel)) IN ('sindico', 'síndico') THEN 'você'
+                                     ELSE r.responsavel END
+                                 ELSE r.marca_acao END
+                    FROM registros_decisao r
                     WHERE r.ocorrencia_id = ocorrencias.id AND r.tipo = 'acao'
                     ORDER BY r.criado_em DESC, r.id DESC LIMIT 1)
             FROM ocorrencias
@@ -226,6 +231,10 @@ def consultar_ocorrencia_acao(cursor, id: uuid.UUID, *, bloquear: bool = False):
     return ocorrencia
 
 
+def papel_delegavel(papel: str | None) -> bool:
+    return bool(papel and papel.strip().casefold() not in {"sindico", "síndico"})
+
+
 @app.get("/ocorrencias/{id}/responsaveis")
 def listar_responsaveis_ocorrencia(id: uuid.UUID):
     with closing(get_db()) as conn, conn.cursor() as cursor:
@@ -234,7 +243,7 @@ def listar_responsaveis_ocorrencia(id: uuid.UUID):
             "SELECT papel FROM responsaveis WHERE condominio_id = %s ORDER BY papel",
             (condominio_id,),
         )
-        responsaveis = [linha[0] for linha in cursor.fetchall()]
+        responsaveis = [papel for (papel,) in cursor.fetchall() if papel_delegavel(papel)]
     return {
         "responsaveis": responsaveis,
         "responsavelSugerido": sugerido if sugerido in responsaveis else None,
@@ -256,6 +265,8 @@ def registrar_decisao(cursor, id, acao, responsavel, data_agendada, nota, marca)
 def confirmar_acao(id: uuid.UUID, decisao: DecisaoAcao):
     responsavel = decisao.responsavel if decisao.acao == "delegar" else None
     data_agendada = decisao.dataAgendada if decisao.acao == "agendar" else None
+    if decisao.acao == "delegar" and not papel_delegavel(responsavel):
+        raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio ou selecione Eu mesmo cuido")
     if decisao.acao == "agendar" and data_agendada is None:
         raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
 
@@ -271,7 +282,7 @@ def confirmar_acao(id: uuid.UUID, decisao: DecisaoAcao):
             )
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio")
-            marca = f"Delegado: {responsavel}"
+            marca = f"Responsável: {responsavel}"
         elif data_agendada is not None:
             marca = f"Agendado para {data_agendada:%d/%m}"
         else:

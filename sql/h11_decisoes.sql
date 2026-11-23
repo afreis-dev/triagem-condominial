@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS responsaveis (
 INSERT INTO responsaveis (condominio_id, papel)
 SELECT c.id, p.papel
 FROM condominios c
-CROSS JOIN (VALUES ('zelador'), ('portaria'), ('sindico')) AS p(papel)
+CROSS JOIN (VALUES ('zelador'), ('portaria')) AS p(papel)
 WHERE c.id IN ('aurora', 'vista-verde', 'palmeiras')
 ON CONFLICT DO NOTHING;
 
