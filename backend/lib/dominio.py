@@ -1,6 +1,7 @@
 import re
 
 PRIORIDADES = ("urgente", "alta", "normal", "baixa")
+CATEGORIAS = ("manutencao", "seguranca_acesso", "convivencia", "pedido_administrativo", "duvida")
 ORIGENS = ("morador", "proprietario", "funcionario", "whatsapp_sindico")
 RESPONSAVEIS = ("zelador", "portaria", "sindico")
 LIMITE_ID = 2_147_483_647

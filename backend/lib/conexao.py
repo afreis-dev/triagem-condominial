@@ -1,13 +1,14 @@
-import os
-
 import psycopg2
-from dotenv import load_dotenv
+
+try:
+    from backend.config import obter_database_url
+except ModuleNotFoundError as erro:
+    if erro.name != "backend":
+        raise
+    from config import obter_database_url
 
 
 def conectar():
-    """Abre uma conexão com o PostgreSQL usando a DATABASE_URL do .env."""
-    load_dotenv()
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL não definida")
+    """Abre uma conexão com o PostgreSQL conforme o APP_ENV."""
+    url = obter_database_url()
     return psycopg2.connect(url, connect_timeout=5)
