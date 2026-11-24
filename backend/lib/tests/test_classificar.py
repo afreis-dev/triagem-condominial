@@ -84,6 +84,19 @@ def test_a_palavra_precisa_aparecer_inteira():
     assert classificar("o gasto do condomínio subiu")["travada"] is False
 
 
+def test_regra_de_maior_prioridade_vence_a_de_menor():
+    resposta = classificar("barulho no salão e falta de água no bloco A")
+    assert resposta["prioridade"] == "alta"
+    assert resposta["motivo"] == "falta de água afeta muitos moradores"
+
+
+@pytest.mark.parametrize("texto", ["furto na garagem e vazamento no teto", "vazamento no teto e furto na garagem"])
+def test_empate_de_prioridade_vale_a_primeira_regra_da_tabela(texto):
+    resposta = classificar(texto)
+    assert resposta["categoria"] == "manutencao"
+    assert resposta["responsavelSugerido"] == "zelador"
+
+
 @pytest.mark.parametrize("regra", REGRAS, ids=lambda regra: regra.palavras[0])
 def test_cada_palavra_da_tabela_encontra_a_propria_regra(regra):
     for palavra in regra.palavras:
