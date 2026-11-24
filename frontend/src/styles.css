@@ -1,0 +1,155 @@
+/*
+ * Tailwind v4 entry: config lives here, with no tailwind.config.js or PostCSS plugin.
+ * - Keep every @import in this top block, above @theme and the rest of the file. Never @import a
+ *   remote URL: load web fonts with a <link> in src/routes/__root.tsx.
+ */
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design system: "Portaria" — a calm, paper-toned operations console.
+ * Warm off-white surfaces, deep petrol-green ink, and a strict priority palette
+ * (Urgente/Alta/Normal/Baixa) that always pairs color with full text.
+ */
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-surface: var(--surface);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Priority palette */
+  --color-urgente: var(--prio-urgente);
+  --color-urgente-soft: var(--prio-urgente-soft);
+  --color-alta: var(--prio-alta);
+  --color-alta-soft: var(--prio-alta-soft);
+  --color-normal: var(--prio-normal);
+  --color-normal-soft: var(--prio-normal-soft);
+  --color-baixa: var(--prio-baixa);
+  --color-baixa-soft: var(--prio-baixa-soft);
+  --color-prio-foreground: var(--prio-foreground);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-card-hover: var(--shadow-card-hover);
+  --shadow-bar: var(--shadow-bar);
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.972 0.007 85);
+  --surface: oklch(0.99 0.004 85);
+  --foreground: oklch(0.24 0.03 200);
+  --card: oklch(0.995 0.003 85);
+  --card-foreground: oklch(0.24 0.03 200);
+  --popover: oklch(0.995 0.003 85);
+  --popover-foreground: oklch(0.24 0.03 200);
+  --primary: oklch(0.36 0.065 190);
+  --primary-foreground: oklch(0.98 0.01 120);
+  --secondary: oklch(0.93 0.015 160);
+  --secondary-foreground: oklch(0.3 0.05 190);
+  --muted: oklch(0.945 0.008 85);
+  --muted-foreground: oklch(0.5 0.02 200);
+  --accent: oklch(0.925 0.02 165);
+  --accent-foreground: oklch(0.3 0.06 190);
+  --destructive: oklch(0.5 0.182 29.5);
+  --destructive-foreground: oklch(0.98 0.005 30);
+  --border: oklch(0.9 0.01 85);
+  --input: oklch(0.88 0.012 85);
+  --ring: oklch(0.5 0.07 190);
+
+  --prio-urgente: oklch(0.5 0.182 29.5); /* #B42318 */
+  --prio-urgente-soft: oklch(0.955 0.025 24);
+  --prio-alta: oklch(0.54 0.156 43); /* #B54708 */
+  --prio-alta-soft: oklch(0.962 0.04 70);
+  --prio-normal: oklch(0.509 0.195 260.9); /* #175CD3 */
+  --prio-normal-soft: oklch(0.955 0.025 245);
+  --prio-baixa: oklch(0.442 0.035 257.8); /* #475467 */
+  --prio-baixa-soft: oklch(0.945 0.007 258);
+  --prio-foreground: oklch(0.99 0 0);
+
+  --shadow-card: 0 1px 0 oklch(0.24 0.03 200 / 4%), 0 1px 3px oklch(0.24 0.03 200 / 6%);
+  --shadow-card-hover: 0 1px 0 oklch(0.24 0.03 200 / 5%), 0 8px 24px -8px oklch(0.24 0.03 200 / 18%);
+  --shadow-bar: 0 1px 0 oklch(0.24 0.03 200 / 6%), 0 6px 16px -12px oklch(0.24 0.03 200 / 20%);
+
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.984 0.003 247.858);
+  --sidebar-foreground: oklch(0.129 0.042 264.695);
+  --sidebar-primary: oklch(0.208 0.042 265.755);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.968 0.007 247.896);
+  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
+  --sidebar-border: oklch(0.929 0.013 255.508);
+  --sidebar-ring: oklch(0.704 0.04 256.788);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "tnum";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
