@@ -62,6 +62,7 @@ def test_devolve_os_campos_do_cartao(conexao, condominio):
             "travada": False,
             "criadaEm": "2026-11-19T10:00:00+00:00",
             "acao": None,
+            "marcaAcao": None,
         }
     ]
     assert list(resposta["ocorrencias"][0]) == list(CAMPOS)
@@ -119,6 +120,7 @@ def test_traz_a_marca_da_ultima_acao_do_sindico(conexao, condominio):
         assert resposta["ok"] is True
     cartoes = {c["id"]: c for c in listar_fila(conexao=conexao)["ocorrencias"]}
     assert cartoes[com_acao]["acao"] == "eu_mesmo"
+    assert cartoes[com_acao]["marcaAcao"] == "Responsável: você"
     assert cartoes[sem_acao]["acao"] is None
 
 

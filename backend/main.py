@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from contextlib import closing
+from datetime import date
 from uuid import UUID
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,10 +11,11 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 from lib.conexao import conectar
+from lib.listar_fila import marca_acao
 from lib.registrar_decisao import buscar_decisoes, registrar_decisao
 from lib.salvar_ocorrencia import salvar_ocorrencia
 from lib.concluir_ocorrencia import concluir_ocorrencia
-from lib.prioridade import ordenar_ocorrencias
+from rotas.fila import rota_listar_fila
 
 app = FastAPI(title="Triagem Condominial")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -60,30 +62,11 @@ def colar(body: ColarBody):
         conn.close()
 
 # Endpoint - H03
+@app.get("/api/ocorrencias")
 @app.get("/ocorrencias")
 def listar_ocorrencias():
-    conn = conectar()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, condominio_id, descricao, prioridade, categoria,
-                   responsavel_sugerido AS responsavel, status, criado_em
-            FROM ocorrencias ORDER BY criado_em ASC
-        """)
-        linhas = cur.fetchall()
-        cur.close()
-        lista = [
-            {
-                "id": str(r[0]), "condominio_id": str(r[1]),
-                "texto_colado": r[2], "descricao": r[2],
-                "prioridade": r[3], "categoria": r[4],
-                "responsavel": r[5], "status": r[6],
-                "criado_em": r[7].isoformat() if r[7] else None,
-            } for r in linhas
-        ]
-        return ordenar_ocorrencias(lista)
-    finally:
-        conn.close()
+    return rota_listar_fila()
+
 
 # Detalhe
 @app.get("/ocorrencias/{id}")
@@ -122,17 +105,79 @@ def listar_decisoes(id: str):
         conn.close()
 
 #Endpoint - H13
+@app.patch("/api/ocorrencias/{id}/concluir")
 @app.patch("/ocorrencias/{id}/concluir")
-def concluir(id: str):
-    oid = _validar_uuid(id)
-    conn = conectar()
-    try:
-        resultado = concluir_ocorrencia(str(oid), conn)
-        if isinstance(resultado, dict) and resultado.get("erros"):
-            raise HTTPException(status_code=400, detail=resultado["erros"])
+def concluir(id: int):
+    resultado = concluir_ocorrencia(id)
+    if resultado["ok"]:
         return resultado
-    finally:
-        conn.close()
+    codigo = 404 if "ocorrenciaId" in resultado["erros"] else 409
+    return JSONResponse(content=resultado, status_code=codigo)
+
+
+class DecisaoAcao(BaseModel):
+    acao: Literal["delegar", "agendar", "eu_mesmo"]
+    responsavel: str | None = None
+    dataAgendada: date | None = None
+    nota: str = Field(default="", max_length=500)
+
+
+def _consultar_ocorrencia_acao(cursor, id: int, *, bloquear: bool = False):
+    consulta = """
+        SELECT condominio_id, responsavel_sugerido, status
+        FROM ocorrencias WHERE id = %s
+    """
+    if bloquear:
+        consulta += " FOR UPDATE"
+    cursor.execute(consulta, (id,))
+    ocorrencia = cursor.fetchone()
+    if ocorrencia is None:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    return ocorrencia
+
+
+def _papeis_delegaveis(cursor, condominio_id):
+    cursor.execute(
+        "SELECT papel FROM responsaveis WHERE condominio_id = %s ORDER BY papel",
+        (condominio_id,),
+    )
+    return [papel for (papel,) in cursor.fetchall()]
+
+
+@app.get("/ocorrencias/{id}/responsaveis")
+def listar_responsaveis_ocorrencia(id: int):
+    with closing(conectar()) as conn, conn.cursor() as cursor:
+        condominio_id, sugerido, _ = _consultar_ocorrencia_acao(cursor, id)
+        papeis = _papeis_delegaveis(cursor, condominio_id)
+    return {
+        "responsaveis": papeis,
+        "responsavelSugerido": sugerido if sugerido in papeis else None,
+    }
+
+
+@app.post("/ocorrencias/{id}/acoes", status_code=201)
+def confirmar_acao(id: int, decisao: DecisaoAcao):
+    if decisao.acao == "agendar" and decisao.dataAgendada is None:
+        raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
+
+    with closing(conectar()) as conn, conn, conn.cursor() as cursor:
+        condominio_id, _, status = _consultar_ocorrencia_acao(cursor, id, bloquear=True)
+        if status != "nova":
+            raise HTTPException(status_code=409, detail="A ocorrência precisa estar em Nova")
+        if decisao.acao == "delegar" and decisao.responsavel not in _papeis_delegaveis(cursor, condominio_id):
+            raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio")
+
+        resultado = registrar_decisao(
+            {"tipo": "acao", "ocorrenciaId": id, "quemDecidiu": "sindico", **decisao.model_dump(mode="json")},
+            conexao=conn,
+        )
+        if not resultado["ok"]:
+            raise HTTPException(status_code=422, detail=resultado["erros"])
+        cursor.execute("UPDATE ocorrencias SET status = 'em_andamento' WHERE id = %s", (id,))
+
+    return {"id": id, "status": "em_andamento",
+            "marcaAcao": marca_acao(decisao.acao, decisao.responsavel, decisao.dataAgendada)}
+
 
 # H10
 @app.patch("/ocorrencias/{id}/prioridade")
