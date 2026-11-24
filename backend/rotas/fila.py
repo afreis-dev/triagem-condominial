@@ -4,8 +4,8 @@ import psycopg2
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from backend.lib.listar_fila import listar_fila
-from backend.lib.auth_deps import sindico_autenticado
+from lib.listar_fila import listar_fila
+from lib.auth_deps import sindico_autenticado
 
 router = APIRouter()
 registro = logging.getLogger(__name__)

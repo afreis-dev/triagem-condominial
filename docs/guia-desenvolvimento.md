@@ -93,14 +93,20 @@ if (!(Test-Path .env)) {
 
 O serviço PostgreSQL deve aparecer com status `healthy`.
 
-Confira se `POSTGRES_DB` e `DATABASE_URL` utilizam o mesmo nome de banco.
+
+Confira se `POSTGRES_DB` e `DATABASE_URL_DEV` utilizam o mesmo nome de banco.
 
 Exemplo para desenvolvimento local:
 
 ```dotenv
+APP_ENV=development
 POSTGRES_DB=triagem_db_dev
-DATABASE_URL=postgresql://triagem:triagem_dev@localhost:5432/triagem_db_dev
+DATABASE_URL_DEV=postgresql://triagem:triagem_dev@localhost:5432/triagem_db_dev
 ```
+
+Para produção, utilize `APP_ENV=production` e configure `DATABASE_URL_PROD` com a conexão remota.
+
+O backend e o Alembic utilizam a mesma configuração. Os testes com banco usam `TEST_DATABASE_URL`, separadamente.
 
 Os valores acima são ilustrativos. Utilize as credenciais definidas no seu `.env`.
 

@@ -19,17 +19,24 @@ const barra: Record<Ocorrencia["prioridade"], string> = {
   baixa: "before:bg-baixa",
 };
 
-export function CartaoOcorrencia({ ocorrencia }: { ocorrencia: Ocorrencia }) {
+export function CartaoOcorrencia({
+  ocorrencia,
+  demonstracao = false,
+}: {
+  ocorrencia: Ocorrencia;
+  demonstracao?: boolean;
+}) {
   const Icone = ICONE_ORIGEM[ocorrencia.origem];
   return (
     <Link
       to="/ocorrencia/$id"
-      params={{ id: String(ocorrencia.id) }}
+      params={{ id: demonstracao ? `demo-${ocorrencia.id}` : String(ocorrencia.id) }}
       className={cn(
         "relative block overflow-hidden rounded-xl border bg-card py-3 pl-4 pr-3.5 shadow-card transition-all",
-        "before:absolute before:inset-y-0 before:left-0 before:w-1",
+        "before:absolute before:inset-y-0 before:left-0",
         "hover:-translate-y-px hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         barra[ocorrencia.prioridade],
+        ocorrencia.prioridade === "urgente" ? "before:w-2" : "before:w-1",
       )}
     >
       {/* 1: priority + condo + elapsed */}
@@ -37,7 +44,9 @@ export function CartaoOcorrencia({ ocorrencia }: { ocorrencia: Ocorrencia }) {
         <PriorityBadge prioridade={ocorrencia.prioridade} />
         <span className="flex min-w-0 flex-1 items-center gap-1 text-xs font-medium text-muted-foreground">
           <Building2 className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{nomeCondominio(ocorrencia.condominioId)}</span>
+          <span className="truncate">
+            {ocorrencia.condominioNome ?? nomeCondominio(ocorrencia.condominioId)}
+          </span>
         </span>
         <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
           <Clock className="size-3" aria-hidden />

@@ -86,8 +86,8 @@ def test_perfil_com_token_invalido(cliente):
 
 
 def test_perfil_com_token_valido(cliente, monkeypatch):
-    from backend.lib.auth import criar_token
-    import backend.lib.auth_deps as auth_deps
+    from lib.auth import criar_token
+    import lib.auth_deps as auth_deps
 
     api, _ = cliente
 

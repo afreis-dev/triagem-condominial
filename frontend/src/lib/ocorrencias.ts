@@ -40,17 +40,19 @@ export interface Ocorrencia {
   id: number;
   protocolo: string;
   condominioId: string;
+  condominioNome?: string;
   titulo: string;
   origem: Origem;
   prioridade: Prioridade;
   /** Priority the system suggested when the occurrence arrived. */
   prioridadeSugerida: Prioridade;
   status: Status;
+  concluidaEm?: string;
   /** Minutes since the occurrence was opened (mock data, avoids clock-dependent SSR). */
   minutosAtras: number;
   motivo: string;
   descricao: string;
-  relator: Relator;
+  relator?: Relator;
   decisao?: Decisao | undefined;
   historico: EventoHistorico[];
   mensagem?: string;
@@ -389,6 +391,7 @@ export function concluirOcorrencia(o: Ocorrencia, quando: string, autor = AUTOR_
   return {
     ...o,
     status: "concluida",
+    concluidaEm: quando,
     historico: [...o.historico, { quando, autor, acao: "Ocorrência concluída" }],
   };
 }
