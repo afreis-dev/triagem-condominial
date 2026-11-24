@@ -1,8 +1,9 @@
 import re
+import uuid
 
 from .classificar import classificar
 from .conexao import conectar
-from .dominio import ORIGENS, PRIORIDADES, inteiro, texto
+from .dominio import ORIGENS, PRIORIDADES, texto
 from .registrar_decisao import registrar_decisao
 
 ORIGENS_FORMULARIO = ("morador", "proprietario", "funcionario")
@@ -13,27 +14,22 @@ SEM_CLASSIFICACAO = {
     "categoria": None,
     "responsavel_sugerido": None,
     "motivo": "não classificada, revisar",
-    "travada": False,
-    "palavra_de_risco": None,
-    "fonte": None,
 }
 
 INSERIR = """
     INSERT INTO ocorrencias
-        (id, protocolo, condominio_id, origem, nome, apartamento, celular, local, descricao, status)
+        (id, texto_original, condominio_id, nome_remetente, celular_remetente, origem, status)
     VALUES
-        (%(id)s, %(protocolo)s, %(condominio_id)s, %(origem)s, %(nome)s, %(apartamento)s,
-         %(celular)s, %(local)s, %(descricao)s, 'nova')
+        (%(id)s, %(texto_original)s, %(condominio_id)s, %(nome_remetente)s,
+         %(celular_remetente)s, %(origem)s, 'Nova')
 """
 
 GUARDAR_CLASSIFICACAO = """
     UPDATE ocorrencias
        SET prioridade = %(prioridade)s, categoria = %(categoria)s,
-           responsavel_sugerido = %(responsavel_sugerido)s, motivo = %(motivo)s,
-           travada = %(travada)s, palavra_de_risco = %(palavra_de_risco)s, fonte = %(fonte)s
+           responsavel_sugerido = %(responsavel_sugerido)s, motivo = %(motivo)s
      WHERE id = %(id)s
 """
-
 
 def _validar(dados):
     """Confere os campos da ocorrência e devolve (erros, valores prontos para gravar)."""
@@ -44,11 +40,9 @@ def _validar(dados):
         erros["origem"] = "Origem inválida"
 
     condominio = dados.get("condominioId")
-    condominio_id = inteiro(condominio)
+    condominio_id = texto(condominio)
     if condominio is None or (isinstance(condominio, str) and not condominio.strip()):
         erros["condominioId"] = "Escolha o condomínio"
-    elif condominio_id is None:
-        erros["condominioId"] = "Condomínio não encontrado"
 
     apartamento = texto(dados.get("apartamento"))
     if apartamento is None and origem in EXIGEM_APARTAMENTO:
@@ -68,17 +62,22 @@ def _validar(dados):
     elif len(descricao) > LIMITE_DESCRICAO:
         erros["descricao"] = "A descrição deve ter no máximo 2000 caracteres"
 
+    local = texto(dados.get("local"))
+    prefixo = ""
+    if local:
+        prefixo += f"[{local}] "
+    if apartamento:
+        prefixo += f"[apt {apartamento}] "
+
     valores = {
         "condominio_id": condominio_id,
         "origem": origem,
-        "nome": texto(dados.get("nome")),
-        "apartamento": apartamento,
-        "celular": celular,
-        "local": texto(dados.get("local")),
+        "nome_remetente": texto(dados.get("nome")),
+        "celular_remetente": celular,
+        "texto_original": f"{prefixo}{descricao}" if descricao else None,
         "descricao": descricao,
     }
     return erros, valores
-
 
 def _classificar(descricao):
     """Classifica a descrição. Se a classificação falhar ou vier inválida, devolve None."""
@@ -91,13 +90,9 @@ def _classificar(descricao):
             "categoria": resultado["categoria"],
             "responsavel_sugerido": resultado["responsavelSugerido"],
             "motivo": resultado["motivo"],
-            "travada": bool(resultado["travada"]),
-            "palavra_de_risco": resultado["palavraDeRisco"],
-            "fonte": resultado["fonte"],
         }
     except Exception:
         return None
-
 
 def _guardar_e_registrar(conexao, ocorrencia_id, origem, classificacao):
     """Guarda a classificação e registra a entrada. Se algo falhar, desfaz só esta etapa e levanta o erro."""
@@ -122,7 +117,6 @@ def _guardar_e_registrar(conexao, ocorrencia_id, origem, classificacao):
             raise
         cur.execute("RELEASE SAVEPOINT guardar_classificacao")
 
-
 def _salvar(conexao, erros, valores, proprio):
     """Confere o condomínio, grava a ocorrência, guarda a classificação e registra a entrada."""
     with conexao.cursor() as cur:
@@ -131,9 +125,9 @@ def _salvar(conexao, erros, valores, proprio):
             erros["condominioId"] = "Condomínio não encontrado"
         if erros:
             return {"ok": False, "erros": erros}
-        cur.execute("SELECT nextval(pg_get_serial_sequence('ocorrencias', 'id'))")
-        ocorrencia_id = cur.fetchone()[0]
-        protocolo = f"TS-{ocorrencia_id:06d}"
+        ocorrencia_id = str(uuid.uuid4())
+        cur.execute("SELECT COUNT(*) FROM ocorrencias")
+        protocolo = f"TS-{cur.fetchone()[0] + 1:06d}"
         cur.execute(INSERIR, {**valores, "id": ocorrencia_id, "protocolo": protocolo})
     if proprio:
         conexao.commit()
@@ -146,7 +140,6 @@ def _salvar(conexao, erros, valores, proprio):
     if proprio:
         conexao.commit()
     return {"ok": True, "ocorrenciaId": ocorrencia_id, "protocolo": protocolo}
-
 
 def salvar_ocorrencia(dados, conexao=None):
     """Valida e grava a ocorrência, classifica o texto e registra a entrada. Com conexão própria, confirma sozinha."""
