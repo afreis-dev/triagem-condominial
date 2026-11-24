@@ -1,11 +1,13 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+from contextlib import closing
 from uuid import UUID
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 from lib.conexao import conectar
 from lib.registrar_decisao import buscar_decisoes, registrar_decisao
@@ -166,3 +168,47 @@ def alterar_prioridade(id: str, body: PrioridadeBody):
         return {"id": str(r[0]), "prioridade": r[1]}
     finally:
         conn.close()
+
+
+class OcorrenciaFormBody(BaseModel):
+    perfil: Literal["morador", "proprietario", "funcionario"]
+    nome: Optional[str] = None
+    apartamento: Optional[str] = None
+    celular: Optional[str] = None
+    local: Optional[str] = None
+    descricao: str
+
+
+def _buscar_condominio_por_slug(identificador: str, conexao):
+    with conexao.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, nome FROM condominios WHERE identificador = %s",
+            (identificador,),
+        )
+        condominio = cursor.fetchone()
+    if condominio is None:
+        raise HTTPException(status_code=404, detail="Condomínio não encontrado")
+    return condominio
+
+
+@app.get("/api/condominios/{identificador}")
+def get_condominio_api(identificador: str):
+    with closing(conectar()) as conexao:
+        condominio_id, nome = _buscar_condominio_por_slug(identificador, conexao)
+    return {"id": condominio_id, "nome": nome}
+
+
+@app.post("/api/condominios/{identificador}/ocorrencias", status_code=201)
+def criar_ocorrencia_form(identificador: str, body: OcorrenciaFormBody):
+    with closing(conectar()) as conexao, conexao:
+        condominio_id, _ = _buscar_condominio_por_slug(identificador, conexao)
+        if body.perfil != "funcionario" and not (body.apartamento or "").strip():
+            return JSONResponse(content={"ok": False, "erros": {"apartamento": "Informe o apartamento"}})
+        dados = body.model_dump(exclude={"perfil"})
+        resultado = salvar_ocorrencia(
+            {**dados, "condominioId": condominio_id, "origem": body.perfil},
+            conexao=conexao,
+        )
+    if not resultado["ok"]:
+        return JSONResponse(content=resultado)
+    return resultado
