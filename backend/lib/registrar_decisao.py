@@ -5,17 +5,14 @@ def _validar(dados):
     """Confere os campos do registro e devolve (erros, valores prontos para gravar)."""
     erros = {}
 
-    # Aceita ocorrenciaId (camelCase) e ocorrencia_id (snake_case)
     ocorrencia_id = texto(dados.get("ocorrenciaId")) or texto(dados.get("ocorrencia_id"))
     if ocorrencia_id is None:
         erros["ocorrenciaId"] = "Ocorrência não encontrada"
 
-    # Aceita acao direto (aprovar_lote) ou tipo (salvar_ocorrencia)
     acao = texto(dados.get("acao")) or texto(dados.get("tipo"))
     if acao is None:
         erros["acao"] = "Informe a ação"
 
-    # Aceita nota direto, ou monta a nota a partir dos outros campos
     nota = texto(dados.get("nota"))
     if nota is None:
         partes = []
@@ -80,3 +77,32 @@ def registrar_decisao(dados, conexao=None):
     finally:
         if proprio:
             conexao.close()
+
+def buscar_decisoes(ocorrencia_id, conn):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, acao, nota, criado_em
+        FROM registros_decisao
+        WHERE ocorrencia_id = %s
+        ORDER BY criado_em ASC
+        """,
+        (str(ocorrencia_id),),
+    )
+    linhas = cur.fetchall()
+    cur.close()
+
+    decisoes = []
+    for id_, acao, nota, criado_em in linhas:
+        nota_texto = nota or ""
+        rebaixou = "rebaix" in nota_texto.lower()
+        decisoes.append({
+            "id": str(id_),
+            "tipo": acao,
+            "acao": acao,
+            "nota": nota_texto,
+            "rebaixou_travada": rebaixou,
+            "criado_em": criado_em.isoformat() if criado_em else None,
+        })
+
+    return decisoes
