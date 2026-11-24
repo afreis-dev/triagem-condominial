@@ -97,6 +97,19 @@ def test_empate_de_prioridade_vale_a_primeira_regra_da_tabela(texto):
     assert resposta["responsavelSugerido"] == "zelador"
 
 
+@pytest.mark.parametrize("texto", ["", "   ", None, 5])
+def test_texto_vazio_ou_que_nao_e_texto_cai_na_nao_reconhecida(texto):
+    assert campos_do_contrato(classificar(texto)) == {
+        "prioridade": "normal",
+        "categoria": "nao_reconhecida",
+        "responsavelSugerido": "sindico",
+        "motivo": "não reconhecida, revisar",
+        "travada": False,
+        "palavraDeRisco": None,
+        "fonte": "regras",
+    }
+
+
 @pytest.mark.parametrize("regra", REGRAS, ids=lambda regra: regra.palavras[0])
 def test_cada_palavra_da_tabela_encontra_a_propria_regra(regra):
     for palavra in regra.palavras:
