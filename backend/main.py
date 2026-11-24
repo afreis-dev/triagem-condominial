@@ -27,7 +27,6 @@ class ColarBody(BaseModel):
     nome: Optional[str] = None
     celular: Optional[str] = None
     apartamento: Optional[str] = None
-    origem: Optional[str] = "whatsapp_sindico"
     local: Optional[str] = None
 
 class PrioridadeBody(BaseModel):
@@ -44,22 +43,19 @@ def _validar_uuid(id: str):
 @app.post("/ocorrencias/colar", status_code=201)
 def colar(body: ColarBody):
     dados = {
-        "condominio_id": body.condominioId,
+        "origem": "whatsapp_sindico",
+        "condominioId": body.condominioId,
         "descricao": body.texto_colado or body.descricao,
-        "texto_colado": body.texto_colado,
         "nome": body.nome,
         "celular": body.celular,
-        "origem": body.origem or "whatsApp_sindico",
+        "apartamento": body.apartamento,
+        "local": body.local,
     }
-    conn = conectar()
-    try:
+    with closing(conectar()) as conn, conn:
         resultado = salvar_ocorrencia(dados, conn)
-        # Se a função devolver {"erros": [...]} vira 400
-        if isinstance(resultado, dict) and resultado.get("erros"):
-            raise HTTPException(status_code=400, detail=resultado["erros"])
-        return resultado
-    finally:
-        conn.close()
+    if not resultado["ok"]:
+        raise HTTPException(status_code=422, detail=resultado["erros"])
+    return resultado
 
 # Endpoint - H03
 @app.get("/api/ocorrencias")
