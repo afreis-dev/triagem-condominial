@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCheck,
@@ -9,13 +10,14 @@ import {
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AuthGuard } from "@/components/AuthGuard";
 import { DecisaoSecao } from "@/components/ocorrencia/DecisaoSecao";
 import { Historico } from "@/components/ocorrencia/Historico";
 import { PrioridadeSecao } from "@/components/ocorrencia/PrioridadeSecao";
 import { Secao } from "@/components/ocorrencia/Secao";
 import { PriorityBadge } from "@/components/fila/PriorityBadge";
 import { Button } from "@/components/ui/button";
-import { useConclusaoApi, useFilaApi } from "@/lib/fila-api";
+import { chaveFila, useConclusaoApi, useFilaApi } from "@/lib/fila-api";
 import {
   STATUS,
   concluirOcorrencia,
@@ -41,8 +43,16 @@ export const Route = createFileRoute("/ocorrencia/$id")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: OcorrenciaPage,
+  component: OcorrenciaProtegida,
 });
+
+function OcorrenciaProtegida() {
+  return (
+    <AuthGuard>
+      <OcorrenciaPage />
+    </AuthGuard>
+  );
+}
 
 function OcorrenciaPage() {
   const { id } = Route.useParams();
@@ -51,13 +61,11 @@ function OcorrenciaPage() {
   const fila = useFilaApi(!demonstracao);
   const ocorrenciasDemo = useOcorrencias();
   const conclusao = useConclusaoApi();
+  const queryClient = useQueryClient();
   const o = (demonstracao ? ocorrenciasDemo : fila.data)?.find(
     (x) => (demonstracao ? `demo-${x.id}` : String(x.id)) === id,
   );
-  const historico = useHistoricoApi(
-  Number(id),
-  !demonstracao && Boolean(o),
-);
+  const historico = useHistoricoApi(Number(id), !demonstracao && Boolean(o));
 
   if (!demonstracao && fila.isPending) {
     return <p role="status" className="py-10 text-center">Carregando ocorrência…</p>;
@@ -190,6 +198,16 @@ function OcorrenciaPage() {
         {demonstracao && <PrioridadeSecao key={`p-${o.prioridade}`} ocorrencia={o} />}
 
         {demonstracao && o.status !== "concluida" && <DecisaoSecao ocorrencia={o} />}
+        {!demonstracao && o.status === "nova" && (
+          <DecisaoSecao
+            idReal={String(o.id)}
+            aoRegistrar={() => {
+              void queryClient.invalidateQueries({ queryKey: chaveFila() });
+              void queryClient.invalidateQueries({ queryKey: ["historico", o.id] });
+              void navigate({ to: "/fila", search: { aba: "andamento" } });
+            }}
+          />
+        )}
 
         {demonstracao ? (
           <Historico ocorrencia={o} />

@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AuthGuard } from "@/components/AuthGuard";
-import { sair } from "@/lib/auth";
 import { useMemo } from "react";
+import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { AuthGuard } from "@/components/AuthGuard";
 import { ColarMensagemDialog } from "@/components/fila/ColarMensagemDialog";
 import { CartaoOcorrencia } from "@/components/fila/CartaoOcorrencia";
 import { EmptyState } from "@/components/fila/EmptyState";
 import { FilterBar } from "@/components/fila/FilterBar";
 import { Paginacao } from "@/components/fila/Paginacao";
 import { PrioritySummary } from "@/components/fila/PrioritySummary";
+import { Button } from "@/components/ui/button";
+import { sair } from "@/lib/auth";
 import {
   CONDOMINIOS,
   PRIORIDADES,
@@ -89,8 +91,7 @@ function FilaPage() {
 
   const contagemAbas = useMemo(() => {
     const c = {} as Record<Status, number>;
-    for (const st of STATUS)
-      c[st.id] = filtrarOcorrencias(todas, { status: st.id, condominio }).length;
+    for (const st of STATUS) c[st.id] = filtrarOcorrencias(todas, { status: st.id, condominio }).length;
     return c;
   }, [todas, condominio]);
 
@@ -129,14 +130,6 @@ function FilaPage() {
           Entrar novamente
         </button>
       </div>
-    );
-  }
-
-  if (fila.isPending) {
-    return (
-      <p role="status" className="py-10 text-center">
-        Carregando fila…
-      </p>
     );
   }
 
@@ -186,9 +179,7 @@ function FilaPage() {
                   <span
                     className={cn(
                       "rounded-full px-1.5 font-mono text-[11px] leading-5 tabular-nums",
-                      ativo
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground",
+                      ativo ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
                     )}
                   >
                     {contagemAbas[s.id]}
@@ -201,12 +192,24 @@ function FilaPage() {
       </header>
 
       <main className="mx-auto flex max-w-5xl flex-col gap-4 px-4 pt-4 sm:px-6 sm:pt-6">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => void fila.refetch()} disabled={fila.isFetching}>
+            <RefreshCw className={fila.isFetching ? "animate-spin" : undefined} aria-hidden />
+            Atualizar
+          </Button>
+          {fila.isFetching && <p role="status">Buscando ocorrências…</p>}
+        </div>
         <PrioritySummary
           contagem={resumo}
           selecionada={prioridade}
           onSelect={(p) => set({ prioridade: p })}
         />
-        {demonstracao && <p role="status">API indisponível. Exibindo dados de demonstração.</p>}
+        {fila.isError && (
+          <p role="status">
+            {fila.error.message}
+            {demonstracao && " Exibindo dados de demonstração."}
+          </p>
+        )}
         <FilterBar
           condominios={condominios}
           condominio={condominio}
@@ -216,13 +219,13 @@ function FilaPage() {
           onLimpar={limpar}
         />
 
-        {lista.length === 0 ? (
+        {!fila.isPending && (lista.length === 0 ? (
           <EmptyState titulo={abaInfo.vazio} filtrosAtivos={filtrosAtivos} onLimpar={limpar} />
         ) : (
           <>
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              {lista.length} {lista.length === 1 ? "ocorrência" : "ocorrências"} · página {pagina}{" "}
-              de {totalPaginas}
+              {lista.length} {lista.length === 1 ? "ocorrência" : "ocorrências"} · página {pagina} de{" "}
+              {totalPaginas}
             </p>
             <ul className="grid gap-2.5 lg:grid-cols-2 lg:gap-3">
               {itens.map((o) => (
@@ -242,7 +245,7 @@ function FilaPage() {
               />
             </footer>
           </>
-        )}
+        ))}
       </main>
     </div>
   );
