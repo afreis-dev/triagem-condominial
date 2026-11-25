@@ -27,7 +27,6 @@ class ColarBody(BaseModel):
     nome: Optional[str] = None
     celular: Optional[str] = None
     apartamento: Optional[str] = None
-    origem: Optional[str] = "whatsapp_sindico"
     local: Optional[str] = None
 
 class PrioridadeBody(BaseModel):
@@ -44,22 +43,19 @@ def _validar_uuid(id: str):
 @app.post("/ocorrencias/colar", status_code=201)
 def colar(body: ColarBody):
     dados = {
-        "condominio_id": body.condominioId,
+        "origem": "whatsapp_sindico",
+        "condominioId": body.condominioId,
         "descricao": body.texto_colado or body.descricao,
-        "texto_colado": body.texto_colado,
         "nome": body.nome,
         "celular": body.celular,
-        "origem": body.origem or "whatsApp_sindico",
+        "apartamento": body.apartamento,
+        "local": body.local,
     }
-    conn = conectar()
-    try:
+    with closing(conectar()) as conn, conn:
         resultado = salvar_ocorrencia(dados, conn)
-        # Se a função devolver {"erros": [...]} vira 400
-        if isinstance(resultado, dict) and resultado.get("erros"):
-            raise HTTPException(status_code=400, detail=resultado["erros"])
-        return resultado
-    finally:
-        conn.close()
+    if not resultado["ok"]:
+        raise HTTPException(status_code=422, detail=resultado["erros"])
+    return resultado
 
 # Endpoint - H03
 @app.get("/api/ocorrencias")
@@ -181,38 +177,33 @@ def confirmar_acao(id: int, decisao: DecisaoAcao):
 
 # H10
 @app.patch("/ocorrencias/{id}/prioridade")
-def alterar_prioridade(id: str, body: PrioridadeBody):
-    oid = _validar_uuid(id)
-    if not body.motivo or not body.motivo.strip():
-        raise HTTPException(status_code=400, detail="motivo é obrigatório")
-    conn = conectar()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT prioridade FROM ocorrencias WHERE id = %s", (str(oid),))
-        atual = cur.fetchone()
-        if not atual:
-            cur.close()
+def alterar_prioridade(id: int, body: PrioridadeBody):
+    with closing(conectar()) as conn, conn, conn.cursor() as cursor:
+        cursor.execute("SELECT prioridade FROM ocorrencias WHERE id = %s FOR UPDATE", (id,))
+        ocorrencia = cursor.fetchone()
+        if ocorrencia is None:
             raise HTTPException(status_code=404, detail="ocorrência não encontrada")
-        prioridade_atual = atual[0]
-        cur.execute(
-            "UPDATE ocorrencias SET prioridade = %s WHERE id = %s RETURNING id, prioridade",
-            (body.prioridade, str(oid)),
+        cursor.execute(
+            "SELECT prioridade_sugerida FROM registros_decisao "
+            "WHERE ocorrencia_id = %s AND tipo = 'entrada' ORDER BY data_hora, id LIMIT 1",
+            (id,),
         )
-        r = cur.fetchone()
-        conn.commit()
-        cur.close()
-        # Registra no histórico
-        try:
-            registrar_decisao({
-                "ocorrencia_id": str(oid),
-                "acao": "prioridade_alterada",
-                "nota": f"Prioridade: {prioridade_atual} -> {body.prioridade}. Motivo: {body.motivo}",
-            }, conn)
-        except Exception as e:
-            print("Aviso registrar_decisao:", e)
-        return {"id": str(r[0]), "prioridade": r[1]}
-    finally:
-        conn.close()
+        entrada = cursor.fetchone()
+        resultado = registrar_decisao(
+            {
+                "tipo": "prioridade_alterada",
+                "ocorrenciaId": id,
+                "quemDecidiu": "sindico",
+                "prioridadeSugerida": entrada[0] if entrada and entrada[0] else ocorrencia[0],
+                "prioridadeFinal": body.prioridade,
+                "motivo": body.motivo,
+            },
+            conexao=conn,
+        )
+        if not resultado["ok"]:
+            raise HTTPException(status_code=422, detail=resultado["erros"])
+        cursor.execute("UPDATE ocorrencias SET prioridade = %s WHERE id = %s", (body.prioridade, id))
+    return {"id": id, "prioridade": body.prioridade}
 
 
 class OcorrenciaFormBody(BaseModel):
