@@ -5,7 +5,7 @@ from typing import Literal, Optional
 from uuid import UUID
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -13,10 +13,13 @@ from pydantic import BaseModel, Field
 load_dotenv(Path(__file__).parent / ".env")
 
 from .lib.conexao import conectar
+from .lib.listar_fila import marca_acao
 from .lib.registrar_decisao import buscar_decisoes, registrar_decisao
 from .lib.salvar_ocorrencia import salvar_ocorrencia
 from .lib.concluir_ocorrencia import concluir_ocorrencia
-from .lib.prioridade import ordenar_ocorrencias
+from .lib.auth import criar_token, verificar_senha
+from .lib.auth_deps import sindico_autenticado
+from .rotas.fila import rota_listar_fila
 
 app = FastAPI(title="Triagem Condominial")
 app.add_middleware(
@@ -56,12 +59,39 @@ def buscar_condominio(identificador: str):
     condominio_id, nome = condominio
     return {"id": condominio_id, "nome": nome}
 
-def marca_acao(acao: str, responsavel: str | None, data_agendada) -> str:
-    if acao == "delegar":
-        return f"Delegado para {responsavel or 'responsável'}"
-    if acao == "agendar":
-        return f"Agendado para {data_agendada}" if data_agendada else "Agendado"
-    return "Vou resolver eu mesmo"
+# ---------- Auth (develop) ----------
+class DadosLogin(BaseModel):
+    email: str
+    senha: str
+
+@app.post("/auth/login")
+def login(dados: DadosLogin):
+    with closing(conectar()) as conexao:
+        with conexao.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, senha_hash
+                FROM sindicos
+                WHERE LOWER(email) = LOWER(%s)
+                """,
+                (dados.email.strip(),),
+            )
+            resultado = cursor.fetchone()
+
+    if not resultado or not resultado[1]:
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    if not verificar_senha(dados.senha, resultado[1]):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    return {
+        "access_token": criar_token(resultado[0]),
+        "token_type": "bearer",
+    }
+
+@app.get("/auth/me")
+def consultar_perfil(sindico=Depends(sindico_autenticado)):
+    return sindico
 
 # ---------- H04 ----------
 class ColarBody(BaseModel):
@@ -91,32 +121,11 @@ def colar(body: ColarBody):
         raise HTTPException(status_code=422, detail=resultado["erros"])
     return resultado
 
-# ---------- H03 ----------
+# ---------- H03 (develop - fila + auth) ----------
 @app.get("/api/ocorrencias")
 @app.get("/ocorrencias")
-def listar_ocorrencias():
-    conn = conectar()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, condominio_id, texto_original, prioridade, categoria,
-                   responsavel_sugerido AS responsavel, status, created_at
-            FROM ocorrencias ORDER BY created_at ASC
-        """)
-        linhas = cur.fetchall()
-        cur.close()
-        lista = [
-            {
-                "id": str(r[0]), "condominio_id": str(r[1]),
-                "texto_colado": r[2], "descricao": r[2],
-                "prioridade": r[3], "categoria": r[4],
-                "responsavel": r[5], "status": r[6],
-                "criado_em": r[7].isoformat() if r[7] else None,
-            } for r in linhas
-        ]
-        return ordenar_ocorrencias(lista)
-    finally:
-        conn.close()
+def listar_ocorrencias(sindico=Depends(sindico_autenticado)):
+    return rota_listar_fila(sindico)
 
 @app.get("/ocorrencias/{id}")
 def buscar_ocorrencia(id: str):
