@@ -27,6 +27,7 @@ import {
   type Ocorrencia,
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia, useOcorrencias } from "@/lib/ocorrencias-store";
+import { useHistoricoApi } from "@/lib/historico-api";
 
 export const Route = createFileRoute("/ocorrencia/$id")({
   head: ({ params }) => ({
@@ -53,6 +54,10 @@ function OcorrenciaPage() {
   const o = (demonstracao ? ocorrenciasDemo : fila.data)?.find(
     (x) => (demonstracao ? `demo-${x.id}` : String(x.id)) === id,
   );
+  const historico = useHistoricoApi(
+  Number(id),
+  !demonstracao && Boolean(o),
+);
 
   if (!demonstracao && fila.isPending) {
     return <p role="status" className="py-10 text-center">Carregando ocorrência…</p>;
@@ -186,7 +191,19 @@ function OcorrenciaPage() {
 
         {demonstracao && o.status !== "concluida" && <DecisaoSecao ocorrencia={o} />}
 
-        <Historico ocorrencia={o} />
+        {demonstracao ? (
+          <Historico ocorrencia={o} />
+        ) : (
+          <Historico
+            ocorrencia={{
+              ...o,
+              historico: historico.data ?? [],
+            }}
+            carregando={historico.isPending}
+            erro={historico.isError}
+            aoTentarNovamente={() => void historico.refetch()}
+          />
+        )}
       </main>
     </div>
   );
