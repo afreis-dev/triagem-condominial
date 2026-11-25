@@ -13,8 +13,9 @@ except ImportError:
 
 registro = logging.getLogger(__name__)
 
-MODELO_PADRAO = "claude-opus-5-5"
+MODELO_PADRAO = "gemini-3.5-flash-lite"
 PRAZO_SEGUNDOS = 10
+LIMITE_TOKENS = 2000
 LIMITE_MOTIVO = 300
 CATEGORIAS_DA_IA = (*CATEGORIAS, "nao_reconhecida")
 
@@ -52,27 +53,29 @@ ESQUEMA = {
 
 
 @lru_cache(maxsize=1)
-def _criar_cliente():
-    """Cria o cliente da IA uma vez. O prazo vale para cada etapa da chamada e não há nova tentativa."""
-    import anthropic
+def _criar_cliente(chave):
+    """Cria o cliente do Gemini uma vez para a chave informada."""
+    from google import genai
 
-    return anthropic.Anthropic(timeout=PRAZO_SEGUNDOS, max_retries=0)
+    return genai.Client(api_key=chave)
 
 
 def _cliente():
     """Devolve o cliente da IA, ou None se a IA não estiver ligada ou sem chave."""
     ligada = os.environ.get("IA_ATIVA", "").strip().lower() in ("1", "true", "sim")
-    if not ligada or not os.environ.get("ANTHROPIC_API_KEY"):
+    chave = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not ligada or not chave:
         return None
-    return _criar_cliente()
+    return _criar_cliente(chave)
 
 
 def _ler(resposta):
-    """Lê o JSON da resposta. Levanta erro se a resposta vier recusada, cortada ou sem texto."""
-    if resposta.stop_reason != "end_turn":
-        raise ValueError(f"resposta incompleta: {resposta.stop_reason}")
-    bloco = next(b for b in resposta.content if b.type == "text")
-    return json.loads(bloco.text)
+    """Lê o JSON da resposta. Levanta erro se a resposta não terminou ou veio sem texto."""
+    if resposta.status != "completed":
+        raise ValueError(f"resposta incompleta: {resposta.status}")
+    if not resposta.output_text:
+        raise ValueError("a resposta veio sem texto")
+    return json.loads(resposta.output_text)
 
 
 def _validar(dados):
@@ -100,13 +103,15 @@ def _validar(dados):
 
 
 def _perguntar(cliente, texto):
-    """Envia só a descrição para a IA e devolve a classificação validada."""
-    resposta = cliente.messages.create(
+    """Envia só a descrição para a IA, sem pedir que o Google guarde a conversa, e devolve a classificação validada."""
+    resposta = cliente.interactions.create(
         model=os.environ.get("IA_MODELO") or MODELO_PADRAO,
-        max_tokens=4000,
-        system=INSTRUCOES,
-        messages=[{"role": "user", "content": texto}],
-        output_config={"effort": "low", "format": {"type": "json_schema", "schema": ESQUEMA}},
+        system_instruction=INSTRUCOES,
+        input=texto,
+        response_format={"type": "text", "mime_type": "application/json", "schema": ESQUEMA},
+        generation_config={"thinking_level": "low", "max_output_tokens": LIMITE_TOKENS},
+        store=False,
+        timeout=PRAZO_SEGUNDOS,
     )
     return _validar(_ler(resposta))
 
