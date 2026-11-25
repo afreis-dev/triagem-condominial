@@ -95,7 +95,7 @@ def main():
 
         executar(
             sys.executable, "-m", "pytest",
-            "-v", "tests/test_database_migration.py",
+            "-v", "tests/",
             ambiente=ambiente,
         )
 
