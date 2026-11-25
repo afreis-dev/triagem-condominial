@@ -90,15 +90,23 @@ def buscar_ocorrencia(id: str):
     finally:
         conn.close()
 
-#Endpoint - H14
+# Endpoint - H14
+@app.get("/api/ocorrencias/{id}/decisoes")
 @app.get("/ocorrencias/{id}/decisoes")
-def listar_decisoes(id: str):
-    oid = _validar_uuid(id)
-    conn = conectar()
-    try:
-        return buscar_decisoes(oid, conn)
-    finally:
-        conn.close()
+def listar_decisoes(id: int):
+    with closing(conectar()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM ocorrencias WHERE id = %s",
+                (id,),
+            )
+            if cur.fetchone() is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Ocorrência não encontrada",
+                )
+
+        return buscar_decisoes(id, conn)
 
 #Endpoint - H13
 @app.patch("/api/ocorrencias/{id}/concluir")

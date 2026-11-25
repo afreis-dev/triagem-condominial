@@ -284,3 +284,71 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
 `GET /ocorrencias` (`backend/rotas/fila.py`) devolve a saída acima com status 200. Cada chamada consulta o banco de novo, então é essa rota que a tela chama ao abrir e em "Atualizar". Não recebe parâmetros.
 
 Se o banco não responder, devolve status 503 com `{ "ok": false, "erros": { "banco": "Não foi possível buscar a fila agora. Tente de novo." } }`, sem detalhes do erro.
+
+## buscarDecisoes(ocorrenciaId)
+
+Python: `backend/lib/registrar_decisao.py` → `buscar_decisoes(ocorrencia_id, conn)`.
+História H14 — SQU-95.
+
+Consulta os registros de decisão persistidos no banco
+para uma determinada ocorrência, sem alterar ou excluir dados.
+
+### Entrada
+
+| Campo | Tipo | Regra |
+|---|---|---|
+| ocorrenciaId | número inteiro | ID da ocorrência |
+
+### Rotas
+
+- GET /api/ocorrencias/{id}/decisoes
+- GET /ocorrencias/{id}/decisoes
+
+### Saída
+
+HTTP 200:
+
+```json
+[
+  {
+    "id": 7,
+    "ocorrenciaId": 42,
+    "tipo": "prioridade_alterada",
+    "quemDecidiu": "sindico",
+    "origem": null,
+    "prioridadeSugerida": "urgente",
+    "prioridadeFinal": "normal",
+    "motivo": "Risco descartado após vistoria",
+    "acao": null,
+    "responsavel": null,
+    "dataAgendada": null,
+    "nota": null,
+    "rebaixouTravada": true,
+    "dataHora": "2026-11-24T20:00:00+00:00"
+  }
+]
+```
+
+### Regras
+
+- Retorna apenas os registros da ocorrência consultada.
+- Ordena por data_hora e id, em ordem crescente.
+- Campos opcionais ausentes são retornados como null.
+- dataHora utiliza ISO 8601 com fuso horário.
+- dataAgendada utiliza o formato AAAA-MM-DD.
+- rebaixouTravada utiliza o valor persistido no banco.
+- Ocorrência sem histórico retorna uma lista vazia.
+- A consulta não altera os registros existentes.
+
+### Respostas HTTP
+
+| Status | Significado |
+|---|---|
+| 200 | Consulta realizada com sucesso |
+| 404 | Ocorrência não encontrada |
+| 422 | Identificador inválido |
+
+### Integração com H16
+
+A autorização por síndico deverá ser aplicada a este
+endpoint quando a autenticação da H16 for integrada.
