@@ -112,6 +112,9 @@ export function useConclusaoApi() {
         lista?.map((o) => (o.id === ocorrenciaId ? concluirOcorrencia(o, concluidaEm) : o)),
       );
       void queryClient.invalidateQueries({ queryKey: chave });
+      void queryClient.invalidateQueries({
+        queryKey: ["historico", ocorrenciaId],
+      });
     },
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: chave });

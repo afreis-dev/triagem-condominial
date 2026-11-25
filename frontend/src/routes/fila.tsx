@@ -24,6 +24,7 @@ import {
 import { useFilaApi } from "@/lib/fila-api";
 import { adicionarMensagem, useOcorrencias } from "@/lib/ocorrencias-store";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface FilaSearch {
   aba?: Status | undefined;
@@ -106,11 +107,30 @@ function FilaPage() {
   const abaInfo = STATUS.find((s) => s.id === aba)!;
   const filtrosAtivos = Boolean(condominio || prioridade);
   const limpar = () => set({ condominio: undefined, prioridade: undefined });
+  const queryClient = useQueryClient();
 
   function colar(condominioId: string, texto: string) {
     const nova = adicionarMensagem(condominioId, texto);
     navigate({ search: { aba: "nova" }, replace: true });
     toast.success("Ocorrência criada", { description: nova.titulo });
+  }
+
+  if (fila.error?.message === "Sessão inválida ou expirada") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
+        <p>Sua sessão expirou.</p>
+        <button
+          type="button"
+          onClick={() => {
+            sair();
+            queryClient.clear();
+            navigate({ to: "/login" });
+          }}
+        >
+          Entrar novamente
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -124,15 +144,20 @@ function FilaPage() {
               </p>
               <h1 className="truncate text-lg font-semibold leading-tight">Fila de ocorrências</h1>
             </div>
-            <div className="flex items-center gap-2">
-              {demonstracao && <ColarMensagemDialog onSubmit={colar} />}
-              <Button variant="outline" onClick={() => {
+          <div className="flex items-center gap-2">
+            {demonstracao && <ColarMensagemDialog onSubmit={colar} />}
+            <button
+              type="button"
+              onClick={() => {
                 sair();
-                void navigate({ to: "/login" });
-              }}>
-                Sair
-              </Button>
-            </div>
+                queryClient.clear();
+                navigate({ to: "/login" });
+              }}
+              className="rounded-md border px-3 py-2 text-sm font-medium"
+            >
+              Sair
+            </button>
+          </div>
           </div>
           <nav role="tablist" aria-label="Status" className="-mb-px mt-3 flex">
             {STATUS.map((s) => {

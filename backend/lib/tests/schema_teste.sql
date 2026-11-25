@@ -1,8 +1,17 @@
+CREATE TABLE sindicos (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    celular TEXT,
+    email TEXT,
+    senha_hash TEXT
+);
+
 CREATE TABLE condominios (
     id SERIAL PRIMARY KEY,
     identificador TEXT NOT NULL UNIQUE,
     nome TEXT NOT NULL,
-    bairro TEXT
+    bairro TEXT,
+    sindico_id INTEGER REFERENCES sindicos (id)
 );
 
 CREATE TABLE ocorrencias (
