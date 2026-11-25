@@ -1,4 +1,5 @@
 from contextlib import closing
+from datetime import date
 from pathlib import Path
 from typing import Literal, Optional
 from uuid import UUID
@@ -6,6 +7,7 @@ from uuid import UUID
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -54,6 +56,13 @@ def buscar_condominio(identificador: str):
     condominio_id, nome = condominio
     return {"id": condominio_id, "nome": nome}
 
+def marca_acao(acao: str, responsavel: str | None, data_agendada) -> str:
+    if acao == "delegar":
+        return f"Delegado para {responsavel or 'responsável'}"
+    if acao == "agendar":
+        return f"Agendado para {data_agendada}" if data_agendada else "Agendado"
+    return "Vou resolver eu mesmo"
+
 # ---------- H04 ----------
 class ColarBody(BaseModel):
     condominioId: str
@@ -76,16 +85,14 @@ def colar(body: ColarBody):
         "apartamento": body.apartamento,
         "local": body.local,
     }
-    conn = conectar()
-    try:
+    with closing(conectar()) as conn, conn:
         resultado = salvar_ocorrencia(dados, conn)
-        if isinstance(resultado, dict) and resultado.get("erros"):
-            raise HTTPException(status_code=400, detail=resultado["erros"])
-        return resultado
-    finally:
-        conn.close()
+    if not resultado["ok"]:
+        raise HTTPException(status_code=422, detail=resultado["erros"])
+    return resultado
 
 # ---------- H03 ----------
+@app.get("/api/ocorrencias")
 @app.get("/ocorrencias")
 def listar_ocorrencias():
     conn = conectar()
@@ -137,27 +144,92 @@ def buscar_ocorrencia(id: str):
         conn.close()
 
 # ---------- H14 ----------
+@app.get("/api/ocorrencias/{id}/decisoes")
 @app.get("/ocorrencias/{id}/decisoes")
 def listar_decisoes(id: str):
     oid = _validar_uuid(id)
-    conn = conectar()
-    try:
-        return buscar_decisoes(oid, conn)
-    finally:
-        conn.close()
+    with closing(conectar()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM ocorrencias WHERE id = %s",
+                (str(oid),),
+            )
+            if cur.fetchone() is None:
+                raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+        return buscar_decisoes(str(oid), conn)
 
 # ---------- H13 ----------
+@app.patch("/api/ocorrencias/{id}/concluir")
 @app.patch("/ocorrencias/{id}/concluir")
 def concluir(id: str):
     oid = _validar_uuid(id)
-    conn = conectar()
-    try:
-        resultado = concluir_ocorrencia(str(oid), conn)
-        if isinstance(resultado, dict) and resultado.get("erros"):
-            raise HTTPException(status_code=400, detail=resultado["erros"])
+    resultado = concluir_ocorrencia(str(oid))
+    if resultado["ok"]:
         return resultado
-    finally:
-        conn.close()
+    codigo = 404 if "ocorrenciaId" in resultado["erros"] else 409
+    return JSONResponse(content=resultado, status_code=codigo)
+
+# ---------- Ações / Responsáveis ----------
+class DecisaoAcao(BaseModel):
+    acao: Literal["delegar", "agendar", "eu_mesmo"]
+    responsavel: str | None = None
+    dataAgendada: date | None = None
+    nota: str = Field(default="", max_length=500)
+
+def _consultar_ocorrencia_acao(cursor, id: str, *, bloquear: bool = False):
+    consulta = """
+        SELECT condominio_id, responsavel_sugerido, status
+        FROM ocorrencias WHERE id = %s
+    """
+    if bloquear:
+        consulta += " FOR UPDATE"
+    cursor.execute(consulta, (id,))
+    ocorrencia = cursor.fetchone()
+    if ocorrencia is None:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    return ocorrencia
+
+def _papeis_delegaveis(cursor, condominio_id):
+    cursor.execute(
+        "SELECT papel FROM responsaveis WHERE condominio_id = %s ORDER BY papel",
+        (condominio_id,),
+    )
+    return [papel for (papel,) in cursor.fetchall()]
+
+@app.get("/ocorrencias/{id}/responsaveis")
+def listar_responsaveis_ocorrencia(id: str):
+    oid = _validar_uuid(id)
+    with closing(conectar()) as conn, conn.cursor() as cursor:
+        condominio_id, sugerido, _ = _consultar_ocorrencia_acao(cursor, str(oid))
+        papeis = _papeis_delegaveis(cursor, condominio_id)
+    return {
+        "responsaveis": papeis,
+        "responsavelSugerido": sugerido if sugerido in papeis else None,
+    }
+
+@app.post("/ocorrencias/{id}/acoes", status_code=201)
+def confirmar_acao(id: str, decisao: DecisaoAcao):
+    oid = _validar_uuid(id)
+    if decisao.acao == "agendar" and decisao.dataAgendada is None:
+        raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
+
+    with closing(conectar()) as conn, conn, conn.cursor() as cursor:
+        condominio_id, _, status = _consultar_ocorrencia_acao(cursor, str(oid), bloquear=True)
+        if status not in ("nova", "Nova"):
+            raise HTTPException(status_code=409, detail="A ocorrência precisa estar em Nova")
+        if decisao.acao == "delegar" and decisao.responsavel not in _papeis_delegaveis(cursor, condominio_id):
+            raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio")
+
+        resultado = registrar_decisao(
+            {"tipo": "acao", "ocorrenciaId": str(oid), "quemDecidiu": "sindico", **decisao.model_dump(mode="json")},
+            conexao=conn,
+        )
+        if not resultado["ok"]:
+            raise HTTPException(status_code=422, detail=resultado["erros"])
+        cursor.execute("UPDATE ocorrencias SET status = 'Em andamento' WHERE id = %s", (str(oid),))
+
+    return {"id": str(oid), "status": "Em andamento",
+            "marcaAcao": marca_acao(decisao.acao, decisao.responsavel, decisao.dataAgendada)}
 
 # ---------- H10 ----------
 class PrioridadeBody(BaseModel):
@@ -169,33 +241,32 @@ def alterar_prioridade(id: str, body: PrioridadeBody):
     oid = _validar_uuid(id)
     if not body.motivo or not body.motivo.strip():
         raise HTTPException(status_code=400, detail="motivo é obrigatório")
-    conn = conectar()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT prioridade FROM ocorrencias WHERE id = %s", (str(oid),))
-        atual = cur.fetchone()
-        if not atual:
-            cur.close()
+    with closing(conectar()) as conn, conn, conn.cursor() as cursor:
+        cursor.execute("SELECT prioridade FROM ocorrencias WHERE id = %s FOR UPDATE", (str(oid),))
+        ocorrencia = cursor.fetchone()
+        if ocorrencia is None:
             raise HTTPException(status_code=404, detail="ocorrência não encontrada")
-        prioridade_atual = atual[0]
-        cur.execute(
-            "UPDATE ocorrencias SET prioridade = %s WHERE id = %s RETURNING id, prioridade",
-            (body.prioridade, str(oid)),
+        cursor.execute(
+            "SELECT nota FROM registros_decisao "
+            "WHERE ocorrencia_id = %s AND acao = 'entrada' ORDER BY criado_em, id LIMIT 1",
+            (str(oid),),
         )
-        r = cur.fetchone()
-        conn.commit()
-        cur.close()
-        try:
-            registrar_decisao({
-                "ocorrencia_id": str(oid),
-                "acao": "prioridade_alterada",
-                "nota": f"Prioridade: {prioridade_atual} -> {body.prioridade}. Motivo: {body.motivo}",
-            }, conn)
-        except Exception as e:
-            print("Aviso registrar_decisao:", e)
-        return {"id": str(r[0]), "prioridade": r[1]}
-    finally:
-        conn.close()
+        entrada = cursor.fetchone()
+        resultado = registrar_decisao(
+            {
+                "tipo": "prioridade_alterada",
+                "ocorrenciaId": str(oid),
+                "quemDecidiu": "sindico",
+                "prioridadeSugerida": ocorrencia[0],
+                "prioridadeFinal": body.prioridade,
+                "motivo": body.motivo,
+            },
+            conexao=conn,
+        )
+        if not resultado["ok"]:
+            raise HTTPException(status_code=422, detail=resultado["erros"])
+        cursor.execute("UPDATE ocorrencias SET prioridade = %s WHERE id = %s", (body.prioridade, str(oid)))
+    return {"id": str(oid), "prioridade": body.prioridade}
 
 # ---------- H01 ----------
 class ChamadoForm(BaseModel):
@@ -207,7 +278,7 @@ class ChamadoForm(BaseModel):
     descricao: str
 
 class OcorrenciaFormBody(BaseModel):
-    perfil: str
+    perfil: Literal["morador", "proprietario", "funcionario"]
     nome: Optional[str] = None
     apartamento: Optional[str] = None
     celular: Optional[str] = None

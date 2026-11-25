@@ -4,3 +4,6 @@ db-status = { cmd = "python -m alembic current", help = "Mostra a migration atua
 db-migrate = { cmd = "python -m alembic upgrade head", help = "Aplica as migrations pendentes" }
 db-history = { cmd = "python -m alembic history", help = "Lista as migrations" }
 db-test = { cmd = "python scripts/db_test.py", help = "Executa testes em banco temporário" }
+db-seed = { cmd = "python scripts/db_seed.py", help = "Carrega os dados fixos oficiais do PO" }
+db-seed-demo = { cmd = "python scripts/db_seed.py --demo", help = "Adiciona ocorrencias ficticias de demonstracao" }
+db-seed-check = { cmd = "python scripts/db_seed.py --check", help = "Confere os dados carregados" }
