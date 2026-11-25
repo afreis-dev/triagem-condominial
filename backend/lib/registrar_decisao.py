@@ -5,17 +5,14 @@ def _validar(dados):
     """Confere os campos do registro e devolve (erros, valores prontos para gravar)."""
     erros = {}
 
-    # Aceita ocorrenciaId (camelCase) e ocorrencia_id (snake_case)
     ocorrencia_id = texto(dados.get("ocorrenciaId")) or texto(dados.get("ocorrencia_id"))
     if ocorrencia_id is None:
         erros["ocorrenciaId"] = "Ocorrência não encontrada"
 
-    # Aceita acao direto (aprovar_lote) ou tipo (salvar_ocorrencia)
     acao = texto(dados.get("acao")) or texto(dados.get("tipo"))
     if acao is None:
         erros["acao"] = "Informe a ação"
 
-    # Aceita nota direto, ou monta a nota a partir dos outros campos
     nota = texto(dados.get("nota"))
     if nota is None:
         partes = []
