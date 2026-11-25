@@ -66,7 +66,7 @@ Erro, com um item por campo inválido e a chave igual ao nome do campo de entrad
 
 Python: `backend/lib/classificar.py` → `classificar(texto)`. Histórias H05, H06, H07 e H08.
 
-Recebe o texto da ocorrência e devolve prioridade, categoria, responsável sugerido e o motivo. A trava das palavras de risco é o último passo e vale acima das regras e da IA.
+Recebe o texto da ocorrência e devolve prioridade, categoria, responsável sugerido e o motivo. Com a IA ligada, ela classifica primeiro; sem a IA, ou se a IA falhar, valem as regras do PO. A trava das palavras de risco é o último passo e vale acima das regras e da IA.
 
 ### Saída
 
@@ -90,7 +90,7 @@ Recebe o texto da ocorrência e devolve prioridade, categoria, responsável suge
 | motivo | Uma frase curta que diz qual palavra ou regra decidiu |
 | travada | `true` quando uma palavra de risco acionou a trava, senão `false` |
 | palavraDeRisco | A palavra que acionou a trava, ou `null` |
-| fonte | `regras` (sprint 1) ou `ia` (sprint 2) |
+| fonte | `regras` quando a classificação veio das regras do PO ou da trava de risco, `ia` quando veio da IA |
 
 ### Regras
 
@@ -100,6 +100,23 @@ Recebe o texto da ocorrência e devolve prioridade, categoria, responsável suge
 - A trava roda depois das regras. Ela procura no texto as 12 palavras de risco, na ordem desta lista, e usa a primeira que aparecer: gás, cheiro de gás, fogo, incêndio, fumaça, preso no elevador, alagamento, desabamento, trinca na estrutura, choque, fio exposto, agressão.
 - A palavra precisa aparecer inteira. "gasto" não aciona "gás".
 - Se a trava acionar: prioridade `urgente`, `travada` `true`, `palavraDeRisco` com a palavra e motivo `palavra de risco: <palavra>`. O responsável é sempre `sindico`. A categoria é a da regra encontrada; sem regra, é `seguranca_acesso` para fogo, incêndio e fumaça e `manutencao` para as outras palavras. Esses valores de risco são os que o código devolve hoje e faltam conferir com a aba de palavras de risco da planilha do PO.
+
+### Classificação com IA
+
+- A IA devolve os mesmos quatro campos das regras: prioridade, categoria, responsável sugerido e um motivo de uma frase. Resposta com valor fora das listas da tabela acima, sem motivo ou cortada é descartada e valem as regras.
+- A IA recebe só a descrição da ocorrência. Nome, apartamento, celular e os outros campos nunca são enviados.
+- A trava de risco roda depois da IA e a IA nunca a sobrescreve: mesmo que a IA sugira prioridade menor, a ocorrência com palavra de risco fica `urgente`. Quando a trava aciona, `fonte` é `regras`, porque a prioridade final vem da regra de risco. Se a IA tiver respondido `nao_reconhecida`, a categoria passa a ser a das regras de risco.
+- Em `listarFila`, cada cartão traz `fonte`, para o síndico ver de onde veio a classificação.
+
+### Configuração da IA
+
+A IA fica desligada até alguém ligá-la, porque o texto da ocorrência sai do sistema. Variáveis de ambiente:
+
+| Variável | Para que serve |
+|---|---|
+| `IA_ATIVA` | `true` liga a IA. Sem ela, só as regras classificam |
+| `ANTHROPIC_API_KEY` | Chave da API. Sem chave, a IA não é chamada |
+| `IA_MODELO` | Modelo usado. Padrão: `claude-opus-5-5` |
 
 ### Exemplos
 
@@ -254,6 +271,7 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
       "categoria": "manutencao",
       "responsavelSugerido": "zelador",
       "motivo": "manutenção simples de área comum",
+      "fonte": "regras",
       "travada": false,
       "criadaEm": "2026-11-19T14:10:00+00:00",
       "concluidaEm": null,
@@ -269,6 +287,7 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
 | condominio | Nome do condomínio |
 | descricao | Texto completo. O título do cartão é o início dela |
 | prioridade, categoria, responsavelSugerido, motivo, travada | O que `classificar` devolveu. Se a classificação falhou, os três primeiros vêm `null` e o motivo é `não classificada, revisar` |
+| fonte | De onde veio a classificação: `regras` ou `ia`. Vem `null` se a classificação falhou |
 | criadaEm | Texto ISO 8601 em UTC (`+00:00`). O cartão calcula o "há 2 h" a partir dele |
 | concluidaEm | Data da conclusão em ISO 8601 UTC, ou `null` se ainda não houver data registrada |
 | acao | Última ação que o síndico registrou (`delegar`, `agendar` ou `eu_mesmo`), ou `null`. É a marca de ação do cartão |

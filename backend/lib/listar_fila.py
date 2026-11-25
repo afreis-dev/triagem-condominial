@@ -4,7 +4,7 @@ from .conexao import conectar
 
 CONSULTA = """
     SELECT o.id, o.protocolo, o.condominio_id, c.nome, o.descricao, o.origem, o.status,
-           o.prioridade, o.categoria, o.responsavel_sugerido, o.motivo, o.travada, o.criada_em,
+           o.prioridade, o.categoria, o.responsavel_sugerido, o.motivo, o.fonte, o.travada, o.criada_em,
            o.concluida_em, ultima.acao, ultima.responsavel, ultima.data_agendada
       FROM ocorrencias o
       JOIN condominios c ON c.id = o.condominio_id
@@ -29,6 +29,7 @@ CAMPOS = (
     "categoria",
     "responsavelSugerido",
     "motivo",
+    "fonte",
     "travada",
     "criadaEm",
     "concluidaEm",
