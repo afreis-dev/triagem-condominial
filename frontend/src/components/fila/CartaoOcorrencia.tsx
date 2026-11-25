@@ -61,7 +61,9 @@ export function CartaoOcorrencia({
       <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icone className="size-3.5 shrink-0" aria-hidden />
         <span className="shrink-0">
-          Origem: <span className="font-medium text-foreground">{ocorrencia.origem}</span>
+          Origem: <span className="font-medium text-foreground">
+            {ocorrencia.origem === "WhatsApp" && !demonstracao ? "WhatsApp, registrada pelo síndico" : ocorrencia.origem}
+          </span>
         </span>
         {ocorrencia.marcaAcao && (
           <span

@@ -74,6 +74,34 @@ def test_perfil_sem_token(cliente):
     assert resposta.status_code == 401
 
 
+def test_lista_condominios_exige_login(cliente):
+    api, _ = cliente
+    assert api.get("/api/condominios").status_code == 401
+
+
+def test_lista_condominios_consulta_a_carteira_do_sindico(cliente, monkeypatch):
+    from lib.auth import criar_token
+    import lib.auth_deps as auth_deps
+
+    api, cursor = cliente
+    conexao_perfil = MagicMock()
+    conexao_perfil.cursor.return_value.__enter__.return_value.fetchone.return_value = (
+        7, "Síndico Teste", EMAIL,
+    )
+    monkeypatch.setattr(auth_deps, "conectar", lambda: conexao_perfil)
+    cursor.fetchall.return_value = [(3, "Vista Verde")]
+
+    resposta = api.get(
+        "/api/condominios",
+        headers={"Authorization": f"Bearer {criar_token(7)}"},
+    )
+    assert resposta.status_code == 200
+    assert resposta.json() == [{"id": 3, "nome": "Vista Verde"}]
+    consulta, parametros = cursor.execute.call_args.args
+    assert "WHERE sindico_id = %s" in consulta
+    assert parametros == (7,)
+
+
 def test_perfil_com_token_invalido(cliente):
     api, cursor = cliente
 

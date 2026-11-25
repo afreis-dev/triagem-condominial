@@ -84,6 +84,16 @@ def _validar_uuid(id: str):
         raise HTTPException(status_code=400, detail="id inválido")
 
 # Endpoint - H04
+@app.get("/api/condominios")
+def listar_condominios_da_carteira(sindico=Depends(sindico_autenticado)):
+    with closing(conectar()) as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, nome FROM condominios WHERE sindico_id = %s ORDER BY nome, id",
+            (sindico["id"],),
+        )
+        return [{"id": id_, "nome": nome} for id_, nome in cursor.fetchall()]
+
+
 @app.post("/ocorrencias/colar", status_code=201)
 def colar(body: ColarBody):
     dados = {

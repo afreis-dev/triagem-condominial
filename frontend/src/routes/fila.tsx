@@ -22,7 +22,7 @@ import {
   type Status,
 } from "@/lib/ocorrencias";
 import { useFilaApi } from "@/lib/fila-api";
-import { adicionarMensagem, useOcorrencias } from "@/lib/ocorrencias-store";
+import { useOcorrencias } from "@/lib/ocorrencias-store";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -109,10 +109,10 @@ function FilaPage() {
   const limpar = () => set({ condominio: undefined, prioridade: undefined });
   const queryClient = useQueryClient();
 
-  function colar(condominioId: string, texto: string) {
-    const nova = adicionarMensagem(condominioId, texto);
-    navigate({ search: { aba: "nova" }, replace: true });
-    toast.success("Ocorrência criada", { description: nova.titulo });
+  function atualizarAposSalvar() {
+    void fila.refetch();
+    void navigate({ search: { aba: "nova" }, replace: true });
+    toast.success("Ocorrência criada");
   }
 
   if (fila.error?.message === "Sessão inválida ou expirada") {
@@ -145,7 +145,7 @@ function FilaPage() {
               <h1 className="truncate text-lg font-semibold leading-tight">Fila de ocorrências</h1>
             </div>
           <div className="flex items-center gap-2">
-            {demonstracao && <ColarMensagemDialog onSubmit={colar} />}
+            {!demonstracao && <ColarMensagemDialog aoSalvar={atualizarAposSalvar} />}
             <button
               type="button"
               onClick={() => {
