@@ -11,6 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 SCHEMA = Path(__file__).with_name("schema_teste.sql")
 
 
+@pytest.fixture(autouse=True)
+def ia_desligada(monkeypatch):
+    """Nenhum teste chama a IA de verdade, mesmo que IA_ATIVA esteja no ambiente."""
+    monkeypatch.delenv("IA_ATIVA", raising=False)
+
+
 @pytest.fixture
 def conexao():
     """Conexão com um schema novo e descartável, criado a partir de schema_teste.sql."""

@@ -51,6 +51,7 @@ def test_devolve_os_campos_do_cartao(conexao, condominio):
         categoria="manutencao",
         responsavel_sugerido="zelador",
         motivo="manutenção simples de área comum",
+        fonte="ia",
     )
     resposta = listar_fila(SINDICO_TESTE_ID, conexao=conexao)
     assert resposta["ok"] is True
@@ -67,6 +68,7 @@ def test_devolve_os_campos_do_cartao(conexao, condominio):
             "categoria": "manutencao",
             "responsavelSugerido": "zelador",
             "motivo": "manutenção simples de área comum",
+            "fonte": "ia",
             "travada": False,
             "criadaEm": "2026-11-19T10:00:00+00:00",
             "concluidaEm": None,
@@ -123,6 +125,14 @@ def test_ocorrencia_sem_classificacao_vem_com_campos_vazios(conexao, condominio)
     assert cartao["categoria"] is None
     assert cartao["responsavelSugerido"] is None
     assert cartao["motivo"] == "não classificada, revisar"
+    assert cartao["fonte"] is None
+
+
+def test_devolve_de_onde_veio_a_classificacao(conexao, condominio):
+    inserir(conexao, condominio, descricao="por regra", fonte="regras")
+    inserir(conexao, condominio, descricao="por ia", fonte="ia")
+    cartoes = {c["descricao"]: c["fonte"] for c in listar_fila(SINDICO_TESTE_ID, conexao=conexao)["ocorrencias"]}
+    assert cartoes == {"por regra": "regras", "por ia": "ia"}
 
 
 def test_traz_a_marca_da_ultima_acao_do_sindico(conexao, condominio):

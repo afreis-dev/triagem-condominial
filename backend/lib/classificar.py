@@ -2,8 +2,10 @@ import re
 import unicodedata
 
 try:
+    from .classificar_ia import classificar_com_ia
     from .regras import REGRAS
 except ImportError:
+    from classificar_ia import classificar_com_ia
     from regras import REGRAS
 
 PALAVRAS_RISCO = [
@@ -69,7 +71,7 @@ def _palavra_risco(texto_norm):
     return None
 
 
-def classificar(texto):
+def classificar_por_regras(texto):
     """Acha a regra do PO de maior prioridade, aplica a trava de risco e, sem regra, devolve não reconhecida."""
     texto_norm = normalizar(texto)
     melhor = None
@@ -126,4 +128,15 @@ def aplicarTravaDeRisco(texto, resultado):
         resultado["responsavelSugerido"] = "sindico"
         resultado["palavra_de_risco"] = exibicao
         resultado["fonte"] = "regras"
+    return resultado
+
+
+def classificar(texto):
+    """Pede a classificação à IA, se estiver ligada, e usa as regras se ela falhar. A trava de risco roda por último."""
+    resultado = classificar_com_ia(texto)
+    if resultado is None:
+        return classificar_por_regras(texto)
+    resultado = aplicarTravaDeRisco(texto, resultado)
+    if resultado["travada"] and resultado["categoria"] == "nao_reconhecida":
+        resultado["categoria"] = classificar_por_regras(texto)["categoria"]
     return resultado
