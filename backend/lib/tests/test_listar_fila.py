@@ -87,7 +87,7 @@ def test_criada_em_e_texto_iso_com_fuso(conexao, condominio):
 
 def test_devolve_data_de_conclusao_em_utc(conexao, condominio):
     inserir(conexao, condominio, status="concluida", concluida_em="2026-11-20 09:00:00-03")
-    cartao, = listar_fila(conexao=conexao)["ocorrencias"]
+    cartao, = listar_fila(SINDICO_TESTE_ID, conexao=conexao)["ocorrencias"]
     assert cartao["concluidaEm"] == "2026-11-20T12:00:00+00:00"
 
 
