@@ -108,6 +108,12 @@ Recebe o texto da ocorrência e devolve prioridade, categoria, responsável suge
 - A trava de risco roda depois da IA e a IA nunca a sobrescreve: mesmo que a IA sugira prioridade menor, a ocorrência com palavra de risco fica `urgente`. Quando a trava aciona, `fonte` é `regras`, porque a prioridade final vem da regra de risco. Se a IA tiver respondido `nao_reconhecida`, a categoria passa a ser a das regras de risco.
 - Em `listarFila`, cada cartão traz `fonte`, para o síndico ver de onde veio a classificação.
 
+### Falha da IA
+
+- A ocorrência é gravada antes de ser classificada (`salvarOcorrencia`), então nenhuma falha da classificação a perde.
+- A IA tem 10 segundos. Se ela não responder nesse prazo, der erro ou responder algo inválido, a classificação não espera mais e usa as regras do PO, com `fonte` `regras`.
+- Se a IA e as regras falharem, a ocorrência fica gravada sem prioridade, categoria e responsável, com o motivo `não classificada, revisar` e `fonte` `null`. O cartão vem assim em `listarFila`. Colocá-lo no topo da fila é com a ordenação da fila.
+
 ### Configuração da IA
 
 A IA fica desligada até alguém ligá-la, porque o texto da ocorrência sai do sistema. Variáveis de ambiente:

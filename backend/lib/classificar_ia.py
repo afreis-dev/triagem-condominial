@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 from functools import lru_cache
 
 try:
@@ -110,15 +111,35 @@ def _perguntar(cliente, texto):
     return _validar(_ler(resposta))
 
 
-def classificar_com_ia(texto, cliente=None):
-    """Pede a classificação à IA. Devolve None se a IA estiver desligada, falhar ou responder algo inválido."""
+def _com_prazo(funcao, prazo):
+    """Roda a função e espera no máximo `prazo` segundos. Se estourar, levanta TimeoutError sem esperar o fim da chamada."""
+    saida = {}
+
+    def executar():
+        try:
+            saida["valor"] = funcao()
+        except Exception as erro:
+            saida["erro"] = erro
+
+    fio = threading.Thread(target=executar, daemon=True)
+    fio.start()
+    fio.join(prazo)
+    if fio.is_alive():
+        raise TimeoutError(f"a IA passou de {prazo} segundos")
+    if "erro" in saida:
+        raise saida["erro"]
+    return saida["valor"]
+
+
+def classificar_com_ia(texto, cliente=None, prazo=None):
+    """Pede a classificação à IA em até 10 segundos. Devolve None se ela estiver desligada, falhar, demorar ou responder algo inválido."""
     if not isinstance(texto, str) or not texto.strip():
         return None
     cliente = cliente or _cliente()
     if cliente is None:
         return None
     try:
-        return _perguntar(cliente, texto)
+        return _com_prazo(lambda: _perguntar(cliente, texto), PRAZO_SEGUNDOS if prazo is None else prazo)
     except Exception as erro:
         registro.warning("a IA não classificou (%s), vão valer as regras", type(erro).__name__)
         return None

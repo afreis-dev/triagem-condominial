@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +9,7 @@ import lib.classificar as classificacao
 import lib.classificar_ia as ia
 from lib.dominio import PRIORIDADES, RESPONSAVEIS
 from lib.regras import REGRAS
+from lib.salvar_ocorrencia import salvar_ocorrencia
 
 AGUA = "a água tá descendo pela parede da garagem desde ontem"
 GAS = "tem cheiro de gás no bloco B"
@@ -208,3 +211,116 @@ def test_sem_resposta_da_ia_valem_as_regras(monkeypatch):
     resultado = classificacao.classificar("lâmpada do hall queimada")
     assert resultado == classificacao.classificar_por_regras("lâmpada do hall queimada")
     assert resultado["fonte"] == "regras"
+
+
+class ClienteLento(ClienteFalso):
+    """Imita uma IA que não responde até alguém liberar a espera."""
+
+    def __init__(self):
+        super().__init__(json.dumps(RESPOSTA))
+        self.liberar = threading.Event()
+
+    def create(self, **pedido):
+        self.chamadas.append(pedido)
+        self.liberar.wait(5)
+        return self.resposta
+
+
+def ocorrencia_gravada(conexao):
+    with conexao.cursor() as cur:
+        cur.execute(
+            "SELECT status, prioridade, categoria, responsavel_sugerido, motivo, travada, palavra_de_risco, fonte "
+            "FROM ocorrencias"
+        )
+        return cur.fetchone()
+
+
+def entrada_gravada(conexao):
+    with conexao.cursor() as cur:
+        cur.execute("SELECT tipo, prioridade_sugerida FROM registros_decisao")
+        return cur.fetchall()
+
+
+def dados(condominio, descricao):
+    return {"origem": "morador", "condominioId": condominio, "celular": "81999991234", "descricao": descricao}
+
+
+def test_o_prazo_da_ia_e_de_10_segundos():
+    assert ia.PRAZO_SEGUNDOS == 10
+
+
+def test_o_cliente_da_ia_usa_o_mesmo_prazo_e_nao_tenta_de_novo(monkeypatch):
+    pytest.importorskip("anthropic")
+    monkeypatch.setenv("IA_ATIVA", "true")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "chave-de-teste")
+    ia._criar_cliente.cache_clear()
+    try:
+        sdk = ia._cliente()
+        assert (sdk.timeout, sdk.max_retries) == (10, 0)
+    finally:
+        ia._criar_cliente.cache_clear()
+
+
+def test_ia_que_passa_do_prazo_nao_e_esperada():
+    lento = ClienteLento()
+    inicio = time.monotonic()
+    try:
+        assert ia.classificar_com_ia(AGUA, lento, prazo=0.2) is None
+        assert time.monotonic() - inicio < 2
+    finally:
+        lento.liberar.set()
+
+
+def test_ia_que_responde_dentro_do_prazo_e_usada():
+    assert ia.classificar_com_ia(AGUA, cliente(), prazo=5)["fonte"] == "ia"
+
+
+def test_ia_fora_do_ar_grava_a_ocorrencia_classificada_por_regras(conexao, condominio, monkeypatch):
+    com_ia(monkeypatch, ClienteFalso(erro=ConnectionError("fora do ar")))
+    resposta = salvar_ocorrencia(dados(condominio, "lâmpada do hall queimada"), conexao=conexao)
+    assert resposta["ok"] is True
+    assert ocorrencia_gravada(conexao) == (
+        "nova", "normal", "manutencao", "zelador", "manutenção simples de área comum", False, None, "regras",
+    )
+    assert entrada_gravada(conexao) == [("entrada", "normal")]
+
+
+def test_ia_lenta_nao_segura_a_ocorrencia_e_valem_as_regras(conexao, condominio, monkeypatch):
+    lento = com_ia(monkeypatch, ClienteLento())
+    monkeypatch.setattr(ia, "PRAZO_SEGUNDOS", 0.2)
+    inicio = time.monotonic()
+    try:
+        resposta = salvar_ocorrencia(dados(condominio, "lâmpada do hall queimada"), conexao=conexao)
+        assert time.monotonic() - inicio < 2
+    finally:
+        lento.liberar.set()
+    assert resposta["ok"] is True
+    gravada = ocorrencia_gravada(conexao)
+    assert (gravada[1:4], gravada[7]) == (("normal", "manutencao", "zelador"), "regras")
+
+
+def test_ia_que_responde_e_gravada_com_a_fonte_ia(conexao, condominio, monkeypatch):
+    com_ia(monkeypatch, cliente())
+    salvar_ocorrencia(dados(condominio, AGUA), conexao=conexao)
+    assert ocorrencia_gravada(conexao) == (
+        "nova", "alta", "manutencao", "zelador", "vazamento ativo que pode piorar", False, None, "ia",
+    )
+
+
+def test_palavra_de_risco_fica_urgente_mesmo_com_a_ia_sugerindo_menos(conexao, condominio, monkeypatch):
+    com_ia(monkeypatch, cliente({**RESPOSTA, "prioridade": "baixa"}))
+    salvar_ocorrencia(dados(condominio, GAS), conexao=conexao)
+    _, prioridade, _, responsavel, motivo, travada, palavra, _ = ocorrencia_gravada(conexao)
+    assert (prioridade, responsavel, motivo, travada, palavra) == ("urgente", "sindico", "palavra de risco: gás", True, "gás")
+
+
+def test_se_a_ia_e_as_regras_falham_a_ocorrencia_fica_salva_para_revisar(conexao, condominio, monkeypatch):
+    def regras_com_defeito(texto):
+        raise RuntimeError("defeito nas regras")
+
+    com_ia(monkeypatch, ClienteFalso(erro=ConnectionError("fora do ar")))
+    monkeypatch.setattr(classificacao, "classificar_por_regras", regras_com_defeito)
+    resposta = salvar_ocorrencia(dados(condominio, "lâmpada do hall queimada"), conexao=conexao)
+    assert resposta["ok"] is True
+    assert ocorrencia_gravada(conexao) == ("nova", None, None, None, "não classificada, revisar", False, None, None)
+    assert entrada_gravada(conexao) == [("entrada", None)]
