@@ -32,7 +32,7 @@ it("consulta de novo e retorna a nova urgente com os dados do condomínio", asyn
   expect(await buscarFila(signal)).toEqual([
     expect.objectContaining({
       condominioId: "7",
-      condominio: "Residencial Aurora",
+      condominioNome: "Residencial Aurora",
       titulo: "Cheiro de gás",
       status: "nova",
       prioridade: "urgente",

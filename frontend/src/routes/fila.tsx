@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AuthGuard } from "@/components/AuthGuard";
-import { sair } from "@/lib/auth";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { AuthGuard } from "@/components/AuthGuard";
 import { ColarMensagemDialog } from "@/components/fila/ColarMensagemDialog";
 import { CartaoOcorrencia } from "@/components/fila/CartaoOcorrencia";
 import { EmptyState } from "@/components/fila/EmptyState";
@@ -11,8 +10,7 @@ import { FilterBar } from "@/components/fila/FilterBar";
 import { Paginacao } from "@/components/fila/Paginacao";
 import { PrioritySummary } from "@/components/fila/PrioritySummary";
 import { Button } from "@/components/ui/button";
-import { buscarFila } from "@/lib/fila-api";
-import { buscarFilaH11, h11Local } from "@/lib/h11-api";
+import { sair } from "@/lib/auth";
 import {
   CONDOMINIOS,
   PRIORIDADES,
@@ -23,6 +21,7 @@ import {
   type Prioridade,
   type Status,
 } from "@/lib/ocorrencias";
+import { useFilaApi } from "@/lib/fila-api";
 import { adicionarMensagem, useOcorrencias } from "@/lib/ocorrencias-store";
 import { cn } from "@/lib/utils";
 
@@ -74,48 +73,15 @@ function FilaProtegida() {
 function FilaPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const locais = useOcorrencias();
-  const [reais, setReais] = useState<Awaited<ReturnType<typeof buscarFila | typeof buscarFilaH11>>>([]);
-  const [busca, setBusca] = useState(0);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState<string>();
-
-  useEffect(() => {
-    const controller = new AbortController();
-    (h11Local ? buscarFilaH11 : buscarFila)(controller.signal)
-      .then((lista) => {
-        if (!controller.signal.aborted) setReais(lista);
-      })
-      .catch((falha: unknown) => {
-        if (controller.signal.aborted) return;
-        setErro(
-          falha instanceof Error && falha.message === "Sessão expirada. Entre novamente."
-            ? falha.message
-            : "Não foi possível buscar a fila. Tente atualizar.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setCarregando(false);
-      });
-    return () => controller.abort();
-  }, [busca]);
-
-  function atualizar() {
-    setErro(undefined);
-    setCarregando(true);
-    setBusca((atual) => atual + 1);
-  }
-
-  const todas = useMemo(() => [...reais, ...locais.filter((o) => o.mensagem)], [reais, locais]);
+  const fila = useFilaApi();
+  const ocorrenciasDemo = useOcorrencias();
+  const demonstracao = fila.isError && !fila.data;
+  const todas = fila.data ?? ocorrenciasDemo;
   const condominios = useMemo(() => {
-    const nomes = new Map(reais.map((o) => [o.condominioId, o.condominio]));
-    for (const local of locais) {
-      if (!local.mensagem || nomes.has(local.condominioId)) continue;
-      const condominioLocal = CONDOMINIOS.find((c) => c.id === local.condominioId);
-      if (condominioLocal) nomes.set(condominioLocal.id, condominioLocal.nome);
-    }
+    if (!fila.data) return CONDOMINIOS;
+    const nomes = new Map(fila.data.map((o) => [o.condominioId, o.condominioNome ?? o.condominioId]));
     return Array.from(nomes, ([id, nome]) => ({ id, nome }));
-  }, [reais, locais]);
+  }, [fila.data]);
   const aba = search.aba ?? "nova";
   const { condominio, prioridade } = search;
 
@@ -124,8 +90,7 @@ function FilaPage() {
 
   const contagemAbas = useMemo(() => {
     const c = {} as Record<Status, number>;
-    for (const st of STATUS)
-      c[st.id] = filtrarOcorrencias(todas, { status: st.id, condominio }).length;
+    for (const st of STATUS) c[st.id] = filtrarOcorrencias(todas, { status: st.id, condominio }).length;
     return c;
   }, [todas, condominio]);
 
@@ -160,17 +125,13 @@ function FilaPage() {
               <h1 className="truncate text-lg font-semibold leading-tight">Fila de ocorrências</h1>
             </div>
             <div className="flex items-center gap-2">
-              <ColarMensagemDialog onSubmit={colar} />
-              <button
-                type="button"
-                onClick={() => {
-                  sair();
-                  navigate({ to: "/login" });
-                }}
-                className="rounded-md border px-3 py-2 text-sm font-medium"
-              >
+              {demonstracao && <ColarMensagemDialog onSubmit={colar} />}
+              <Button variant="outline" onClick={() => {
+                sair();
+                void navigate({ to: "/login" });
+              }}>
                 Sair
-              </button>
+              </Button>
             </div>
           </div>
           <nav role="tablist" aria-label="Status" className="-mb-px mt-3 flex">
@@ -193,9 +154,7 @@ function FilaPage() {
                   <span
                     className={cn(
                       "rounded-full px-1.5 font-mono text-[11px] leading-5 tabular-nums",
-                      ativo
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground",
+                      ativo ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
                     )}
                   >
                     {contagemAbas[s.id]}
@@ -208,42 +167,45 @@ function FilaPage() {
       </header>
 
       <main className="mx-auto flex max-w-5xl flex-col gap-4 px-4 pt-4 sm:px-6 sm:pt-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="outline" onClick={atualizar} disabled={carregando}>
-            <RefreshCw className={carregando ? "animate-spin" : undefined} aria-hidden />
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => void fila.refetch()} disabled={fila.isFetching}>
+            <RefreshCw className={fila.isFetching ? "animate-spin" : undefined} aria-hidden />
             Atualizar
           </Button>
-          {carregando && <p role="status">Buscando ocorrências…</p>}
-          {erro && <p role="alert">{erro}</p>}
+          {fila.isFetching && <p role="status">Buscando ocorrências…</p>}
         </div>
         <PrioritySummary
           contagem={resumo}
           selecionada={prioridade}
           onSelect={(p) => set({ prioridade: p })}
         />
+        {fila.isError && (
+          <p role="status">
+            {fila.error.message}
+            {demonstracao && " Exibindo dados de demonstração."}
+          </p>
+        )}
         <FilterBar
-          condominio={condominio}
           condominios={condominios}
+          condominio={condominio}
           prioridade={prioridade}
           onCondominio={(v) => set({ condominio: v })}
           onPrioridade={(v) => set({ prioridade: v })}
           onLimpar={limpar}
         />
 
-        {lista.length === 0 ? (
-          !carregando && !erro && (
-            <EmptyState titulo={abaInfo.vazio} filtrosAtivos={filtrosAtivos} onLimpar={limpar} />
-          )
+        {!fila.isPending && (lista.length === 0 ? (
+          <EmptyState titulo={abaInfo.vazio} filtrosAtivos={filtrosAtivos} onLimpar={limpar} />
         ) : (
           <>
             <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              {lista.length} {lista.length === 1 ? "ocorrência" : "ocorrências"} · página {pagina}{" "}
-              de {totalPaginas}
+              {lista.length} {lista.length === 1 ? "ocorrência" : "ocorrências"} · página {pagina} de{" "}
+              {totalPaginas}
             </p>
             <ul className="grid gap-2.5 lg:grid-cols-2 lg:gap-3">
               {itens.map((o) => (
                 <li key={o.id}>
-                  <CartaoOcorrencia ocorrencia={o} />
+                  <CartaoOcorrencia ocorrencia={o} demonstracao={demonstracao} />
                 </li>
               ))}
             </ul>
@@ -258,7 +220,7 @@ function FilaPage() {
               />
             </footer>
           </>
-        )}
+        ))}
       </main>
     </div>
   );

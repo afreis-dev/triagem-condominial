@@ -1,20 +1,20 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PRIORIDADES, type Condominio, type Prioridade } from "@/lib/ocorrencias";
+import { CONDOMINIOS, PRIORIDADES, type Condominio, type Prioridade } from "@/lib/ocorrencias";
 
 const TODOS = "todos";
 
 export function FilterBar({
   condominio,
-  condominios,
+  condominios = CONDOMINIOS,
   prioridade,
   onCondominio,
   onPrioridade,
   onLimpar,
 }: {
   condominio?: string | undefined;
-  condominios: Condominio[];
+  condominios?: Condominio[];
   prioridade?: Prioridade | undefined;
   onCondominio: (v: string | undefined) => void;
   onPrioridade: (v: Prioridade | undefined) => void;

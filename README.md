@@ -57,7 +57,13 @@ python -c "from lib.classificar import classificar; print(classificar('cheiro de
 
 Para subir o banco local com Docker, o servidor FastAPI e as migrations, siga o `docs/guia-desenvolvimento.md`.
 
-Variáveis de ambiente, como a `DATABASE_URL`, ficam num `.env` local. O `.env` nunca vai para o repositório.
+As configurações de ambiente ficam no `.env` da raiz do projeto.
+
+A variável `APP_ENV` define o ambiente utilizado:
+- `development`: utiliza `DATABASE_URL_DEV` (PostgreSQL local).
+- `production`: utiliza `DATABASE_URL_PROD` (PostgreSQL remoto).
+
+O backend e o Alembic compartilham essa configuração. O `.env` nunca deve ser enviado ao repositório.
 
 ## Como trabalhamos
 

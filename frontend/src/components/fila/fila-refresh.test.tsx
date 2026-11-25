@@ -1,10 +1,16 @@
 import type { ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Route } from "@/routes/fila";
 
 vi.mock("@/components/AuthGuard", () => ({
   AuthGuard: ({ children }: { children: ReactNode }) => children,
+}));
+
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tanstack/react-router")>(),
+  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -40,7 +46,11 @@ it("Atualizar exibe uma urgente que chegou depois da abertura da fila", async ()
     }));
   vi.stubGlobal("fetch", fetchMock);
   const Fila = Route.options.component!;
-  render(<Fila />);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Fila />
+    </QueryClientProvider>,
+  );
 
   const atualizar = screen.getByRole("button", { name: "Atualizar" }) as HTMLButtonElement;
   await waitFor(() => expect(atualizar.disabled).toBe(false));

@@ -1,0 +1,3 @@
+-r requirements.txt
+taskipy==1.14.1
+pytest==9.2.0
