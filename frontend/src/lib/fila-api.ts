@@ -4,6 +4,7 @@ import {
   type Ocorrencia,
   type Prioridade,
 } from "./ocorrencias";
+import { obterToken } from "./auth";
 
 const FILA = ["fila"] as const;
 const URL = "/api/ocorrencias";
@@ -48,7 +49,16 @@ export function useFilaApi(habilitada = true) {
     enabled: habilitada,
     retry: false,
     queryFn: async ({ signal }) => {
-      const resposta = await fetch(URL, { signal });
+      const resposta = await fetch(URL, {
+        signal,
+        headers: {
+          Authorization: `Bearer ${obterToken()}`,
+        },
+      });
+
+      if (resposta.status === 401) {
+        throw new Error("Sessão inválida ou expirada");
+      }
       if (!resposta.ok) throw new Error("Não foi possível consultar a fila.");
       const dados: { ok: true; ocorrencias: CartaoFila[] } = await resposta.json();
       const anteriores = new Map(
