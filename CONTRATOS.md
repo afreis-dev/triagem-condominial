@@ -116,13 +116,13 @@ Recebe o texto da ocorrência e devolve prioridade, categoria, responsável suge
 
 ### Configuração da IA
 
-A IA fica desligada até alguém ligá-la, porque o texto da ocorrência sai do sistema. Variáveis de ambiente:
+A IA é o Gemini, do Google, e fica desligada até alguém ligá-la, porque o texto da ocorrência sai do sistema. No plano grátis o Google pode usar o que recebe para melhorar os produtos dele; no plano pago não usa. O pedido já vai com `store: false`, para a conversa não ficar guardada. Variáveis de ambiente:
 
 | Variável | Para que serve |
 |---|---|
 | `IA_ATIVA` | `true` liga a IA. Sem ela, só as regras classificam |
-| `ANTHROPIC_API_KEY` | Chave da API. Sem chave, a IA não é chamada |
-| `IA_MODELO` | Modelo usado. Padrão: `claude-opus-5-5` |
+| `GEMINI_API_KEY` | Chave da API do Gemini, criada no Google AI Studio. Sem chave, a IA não é chamada |
+| `IA_MODELO` | Modelo do Gemini. Padrão: `gemini-3.5-flash-lite`, que tem plano grátis |
 
 ### Exemplos
 
