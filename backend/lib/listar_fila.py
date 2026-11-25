@@ -5,7 +5,7 @@ from .conexao import conectar
 CONSULTA = """
     SELECT o.id, o.protocolo, o.condominio_id, c.nome, o.descricao, o.origem, o.status,
            o.prioridade, o.categoria, o.responsavel_sugerido, o.motivo, o.travada, o.criada_em,
-           ultima.acao, ultima.responsavel, ultima.data_agendada
+           o.concluida_em, ultima.acao, ultima.responsavel, ultima.data_agendada
       FROM ocorrencias o
       JOIN condominios c ON c.id = o.condominio_id
       LEFT JOIN LATERAL (
@@ -31,6 +31,7 @@ CAMPOS = (
     "motivo",
     "travada",
     "criadaEm",
+    "concluidaEm",
     "acao",
     "marcaAcao",
 )
@@ -51,6 +52,8 @@ def _cartao(linha):
     """Monta o cartão da fila no formato do contrato."""
     cartao = dict(zip(CAMPOS, (*linha[:-2], marca_acao(*linha[-3:]))))
     cartao["criadaEm"] = cartao["criadaEm"].astimezone(timezone.utc).isoformat()
+    if cartao["concluidaEm"] is not None:
+        cartao["concluidaEm"] = cartao["concluidaEm"].astimezone(timezone.utc).isoformat()
     return cartao
 
 

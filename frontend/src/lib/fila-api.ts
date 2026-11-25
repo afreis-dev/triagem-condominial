@@ -20,6 +20,8 @@ type CartaoFila = {
   prioridade: Prioridade | null;
   motivo: string | null;
   criadaEm: string;
+  concluidaEm?: string | null;
+  marcaAcao?: string | null;
 };
 
 function mapearCartao(cartao: CartaoFila): Ocorrencia {
@@ -36,6 +38,8 @@ function mapearCartao(cartao: CartaoFila): Ocorrencia {
     status: cartao.status === "em_andamento" ? "andamento" : cartao.status,
     prioridade,
     prioridadeSugerida: prioridade,
+    criadaEm: cartao.criadaEm,
+    ...(cartao.marcaAcao ? { marcaAcao: cartao.marcaAcao } : {}),
     minutosAtras: Math.max(0, Math.floor((Date.now() - Date.parse(cartao.criadaEm)) / 60_000)),
     motivo: cartao.motivo ?? "Não classificada, revisar",
     historico: [{ quando: cartao.criadaEm, autor: "Sistema", acao: `Recebida via ${origem}` }],
@@ -67,7 +71,7 @@ export function useFilaApi(habilitada = true) {
       return dados.ocorrencias.map((cartao) => {
         const ocorrencia = mapearCartao(cartao);
         if (cartao.status !== "concluida") return ocorrencia;
-        const horario = anteriores.get(cartao.id);
+        const horario = cartao.concluidaEm ?? anteriores.get(cartao.id);
         return horario
           ? concluirOcorrencia({ ...ocorrencia, status: "andamento" }, horario)
           : ocorrencia;
