@@ -11,6 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 SCHEMA = Path(__file__).with_name("schema_teste.sql")
 
 
+@pytest.fixture(autouse=True)
+def ia_desligada(monkeypatch):
+    """Nenhum teste chama a IA de verdade, mesmo que IA_ATIVA esteja no ambiente."""
+    monkeypatch.delenv("IA_ATIVA", raising=False)
+
+
 @pytest.fixture
 def conexao():
     """Conexão com um schema novo e descartável, criado a partir de schema_teste.sql."""
@@ -33,10 +39,32 @@ def conexao():
 
 
 @pytest.fixture
-def condominio(conexao):
+def sindico(conexao):
     with conexao.cursor() as cur:
         cur.execute(
-            "INSERT INTO condominios (identificador, nome, bairro) VALUES ('aurora', 'Residencial Aurora', 'Boa Viagem') RETURNING id"
+            """
+            INSERT INTO sindicos (nome, email)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            ("Síndico Teste", "sindico@teste.com"),
+        )
+        sindico_id = cur.fetchone()[0]
+
+    conexao.commit()
+    return sindico_id
+
+
+@pytest.fixture
+def condominio(conexao, sindico):
+    with conexao.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO condominios (identificador, nome, bairro, sindico_id)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            ("aurora", "Residencial Aurora", "Boa Viagem", sindico),
         )
         condominio_id = cur.fetchone()[0]
     conexao.commit()

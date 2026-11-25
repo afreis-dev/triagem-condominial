@@ -66,7 +66,7 @@ Erro, com um item por campo inválido e a chave igual ao nome do campo de entrad
 
 Python: `backend/lib/classificar.py` → `classificar(texto)`. Histórias H05, H06, H07 e H08.
 
-Recebe o texto da ocorrência e devolve prioridade, categoria, responsável sugerido e o motivo. A trava das palavras de risco é o último passo e vale acima das regras e da IA.
+Recebe o texto da ocorrência e devolve prioridade, categoria, responsável sugerido e o motivo. Com a IA ligada, ela classifica primeiro; sem a IA, ou se a IA falhar, valem as regras do PO. A trava das palavras de risco é o último passo e vale acima das regras e da IA.
 
 ### Saída
 
@@ -85,21 +85,44 @@ Recebe o texto da ocorrência e devolve prioridade, categoria, responsável suge
 | Campo | Valores permitidos |
 |---|---|
 | prioridade | `urgente`, `alta`, `normal`, `baixa` |
-| categoria | `manutencao`, `seguranca_acesso`, `convivencia`, `pedido_administrativo`, `duvida` |
+| categoria | `manutencao`, `seguranca_acesso`, `convivencia`, `pedido_administrativo`, `duvida`, `nao_reconhecida` (só quando nenhuma regra encontra o texto) |
 | responsavelSugerido | `zelador`, `portaria`, `sindico` |
 | motivo | Uma frase curta que diz qual palavra ou regra decidiu |
 | travada | `true` quando uma palavra de risco acionou a trava, senão `false` |
 | palavraDeRisco | A palavra que acionou a trava, ou `null` |
-| fonte | `regras` (sprint 1) ou `ia` (sprint 2) |
+| fonte | `regras` quando a classificação veio das regras do PO ou da trava de risco, `ia` quando veio da IA |
 
 ### Regras
 
 - O texto é padronizado antes da busca: minúsculas, sem acento, sem pontuação. "FUMAÇA no corredor!!!" vira "fumaca no corredor".
-- Texto que encaixa em mais de uma regra usa a regra de maior prioridade (a confirmar com o PO).
-- Texto sem nenhuma regra devolve prioridade `normal` e motivo `não reconhecida, revisar`. Categoria e responsável nesse caso: a confirmar com o PO. Texto vazio ou só com espaços cai aqui.
+- Texto que encaixa em mais de uma regra usa a regra de maior prioridade. Em empate de prioridade vale a primeira regra da tabela do PO.
+- Texto sem nenhuma regra devolve prioridade `normal`, categoria `nao_reconhecida`, responsável `sindico` e motivo `não reconhecida, revisar`. Texto vazio ou só com espaços cai aqui.
 - A trava roda depois das regras. Ela procura no texto as 12 palavras de risco, na ordem desta lista, e usa a primeira que aparecer: gás, cheiro de gás, fogo, incêndio, fumaça, preso no elevador, alagamento, desabamento, trinca na estrutura, choque, fio exposto, agressão.
 - A palavra precisa aparecer inteira. "gasto" não aciona "gás".
-- Se a trava acionar: prioridade `urgente`, `travada` `true`, `palavraDeRisco` com a palavra e motivo `palavra de risco: <palavra>`. Categoria e responsável das ocorrências de risco: a confirmar com o PO.
+- Se a trava acionar: prioridade `urgente`, `travada` `true`, `palavraDeRisco` com a palavra e motivo `palavra de risco: <palavra>`. O responsável é sempre `sindico`. A categoria é a da regra encontrada; sem regra, é `seguranca_acesso` para fogo, incêndio e fumaça e `manutencao` para as outras palavras. Esses valores de risco são os que o código devolve hoje e faltam conferir com a aba de palavras de risco da planilha do PO.
+
+### Classificação com IA
+
+- A IA devolve os mesmos quatro campos das regras: prioridade, categoria, responsável sugerido e um motivo de uma frase. Resposta com valor fora das listas da tabela acima, sem motivo ou cortada é descartada e valem as regras.
+- A IA recebe só a descrição da ocorrência. Nome, apartamento, celular e os outros campos nunca são enviados.
+- A trava de risco roda depois da IA e a IA nunca a sobrescreve: mesmo que a IA sugira prioridade menor, a ocorrência com palavra de risco fica `urgente`. Quando a trava aciona, `fonte` é `regras`, porque a prioridade final vem da regra de risco. Se a IA tiver respondido `nao_reconhecida`, a categoria passa a ser a das regras de risco.
+- Em `listarFila`, cada cartão traz `fonte`, para o síndico ver de onde veio a classificação.
+
+### Falha da IA
+
+- A ocorrência é gravada antes de ser classificada (`salvarOcorrencia`), então nenhuma falha da classificação a perde.
+- A IA tem 10 segundos. Se ela não responder nesse prazo, der erro ou responder algo inválido, a classificação não espera mais e usa as regras do PO, com `fonte` `regras`.
+- Se a IA e as regras falharem, a ocorrência fica gravada sem prioridade, categoria e responsável, com o motivo `não classificada, revisar` e `fonte` `null`. O cartão vem assim em `listarFila`. Colocá-lo no topo da fila é com a ordenação da fila.
+
+### Configuração da IA
+
+A IA fica desligada até alguém ligá-la, porque o texto da ocorrência sai do sistema. Variáveis de ambiente:
+
+| Variável | Para que serve |
+|---|---|
+| `IA_ATIVA` | `true` liga a IA. Sem ela, só as regras classificam |
+| `ANTHROPIC_API_KEY` | Chave da API. Sem chave, a IA não é chamada |
+| `IA_MODELO` | Modelo usado. Padrão: `claude-opus-5-5` |
 
 ### Exemplos
 
@@ -109,11 +132,11 @@ Em todos, `fonte` é `regras`.
 |---|---|---|---|---|---|---|
 | lâmpada do hall queimada | normal | manutencao | zelador | manutenção simples de área comum | false | null |
 | barulho no salão e falta de água no bloco A | alta | manutencao | zelador | falta de água afeta muitos moradores | false | null |
-| tem cheiro de gás no bloco B | urgente | manutencao* | zelador* | palavra de risco: gás | true | gás |
-| a lâmpada queimou e está com cheiro de gás | urgente | manutencao* | zelador* | palavra de risco: gás | true | gás |
-| teste asdf | normal | a confirmar* | a confirmar* | não reconhecida, revisar | false | null |
+| tem cheiro de gás no bloco B | urgente | manutencao* | sindico* | palavra de risco: gás | true | gás |
+| a lâmpada queimou e está com cheiro de gás | urgente | manutencao* | sindico* | palavra de risco: gás | true | gás |
+| teste asdf | normal | nao_reconhecida | sindico | não reconhecida, revisar | false | null |
 
-\* A confirmar com o PO. O texto do motivo das regras vem da lista de palavras-chave do PO, então o das linhas 1 e 2 é ilustrativo.
+\* Valores que o código devolve hoje. Falta conferir com a aba de palavras de risco da planilha do PO.
 
 ## registrarDecisao(dados)
 
@@ -229,3 +252,130 @@ Erro, com a chave igual ao nome do campo:
 |---|---|---|
 | ocorrenciaId | vazio ou não existe | Ocorrência não encontrada |
 | status | não está em `em_andamento` | Só dá para concluir uma ocorrência em andamento |
+
+## listarFila()
+
+Python: `backend/lib/listar_fila.py` → `listar_fila()`. História H03.
+
+Busca no banco as ocorrências de todos os condomínios, com os campos que o cartão da fila mostra. A tela chama esta função ao abrir e ao tocar em "Atualizar". A função só lê, não grava nada, e não recebe campos.
+
+### Saída
+
+```json
+{
+  "ok": true,
+  "ocorrencias": [
+    {
+      "id": 42,
+      "protocolo": "TS-000042",
+      "condominioId": 1,
+      "condominio": "Residencial Aurora",
+      "descricao": "Lâmpada do hall queimada",
+      "origem": "morador",
+      "status": "nova",
+      "prioridade": "normal",
+      "categoria": "manutencao",
+      "responsavelSugerido": "zelador",
+      "motivo": "manutenção simples de área comum",
+      "fonte": "regras",
+      "travada": false,
+      "criadaEm": "2026-11-19T14:10:00+00:00",
+      "concluidaEm": null,
+      "acao": null
+    }
+  ]
+}
+```
+
+| Campo | Regra |
+|---|---|
+| id, protocolo, condominioId, origem, status | Os mesmos de `salvarOcorrencia` e `concluirOcorrencia` |
+| condominio | Nome do condomínio |
+| descricao | Texto completo. O título do cartão é o início dela |
+| prioridade, categoria, responsavelSugerido, motivo, travada | O que `classificar` devolveu. Se a classificação falhou, os três primeiros vêm `null` e o motivo é `não classificada, revisar` |
+| fonte | De onde veio a classificação: `regras` ou `ia`. Vem `null` se a classificação falhou |
+| criadaEm | Texto ISO 8601 em UTC (`+00:00`). O cartão calcula o "há 2 h" a partir dele |
+| concluidaEm | Data da conclusão em ISO 8601 UTC, ou `null` se ainda não houver data registrada |
+| acao | Última ação que o síndico registrou (`delegar`, `agendar` ou `eu_mesmo`), ou `null`. É a marca de ação do cartão |
+
+### Regras
+
+- Vêm as ocorrências de todos os status (`nova`, `em_andamento` e `concluida`). As abas e as contagens de cada aba saem dessa lista.
+- Enquanto não há login, vêm os condomínios de todo o banco.
+- Vem por ordem de chegada, da mais antiga para a mais nova (`criadaEm` e depois `id`). A ordenação da fila por prioridade não é feita aqui.
+- Sem nenhuma ocorrência, a resposta é `{ "ok": true, "ocorrencias": [] }`.
+- Não há mensagens de erro de validação, porque a função não recebe campos.
+
+### Rota
+
+`GET /ocorrencias` (`backend/rotas/fila.py`) devolve a saída acima com status 200. Cada chamada consulta o banco de novo, então é essa rota que a tela chama ao abrir e em "Atualizar". Não recebe parâmetros.
+
+Se o banco não responder, devolve status 503 com `{ "ok": false, "erros": { "banco": "Não foi possível buscar a fila agora. Tente de novo." } }`, sem detalhes do erro.
+
+## buscarDecisoes(ocorrenciaId)
+
+Python: `backend/lib/registrar_decisao.py` → `buscar_decisoes(ocorrencia_id, conn)`.
+História H14 — SQU-95.
+
+Consulta os registros de decisão persistidos no banco
+para uma determinada ocorrência, sem alterar ou excluir dados.
+
+### Entrada
+
+| Campo | Tipo | Regra |
+|---|---|---|
+| ocorrenciaId | número inteiro | ID da ocorrência |
+
+### Rotas
+
+- GET /api/ocorrencias/{id}/decisoes
+- GET /ocorrencias/{id}/decisoes
+
+### Saída
+
+HTTP 200:
+
+```json
+[
+  {
+    "id": 7,
+    "ocorrenciaId": 42,
+    "tipo": "prioridade_alterada",
+    "quemDecidiu": "sindico",
+    "origem": null,
+    "prioridadeSugerida": "urgente",
+    "prioridadeFinal": "normal",
+    "motivo": "Risco descartado após vistoria",
+    "acao": null,
+    "responsavel": null,
+    "dataAgendada": null,
+    "nota": null,
+    "rebaixouTravada": true,
+    "dataHora": "2026-11-24T20:00:00+00:00"
+  }
+]
+```
+
+### Regras
+
+- Retorna apenas os registros da ocorrência consultada.
+- Ordena por data_hora e id, em ordem crescente.
+- Campos opcionais ausentes são retornados como null.
+- dataHora utiliza ISO 8601 com fuso horário.
+- dataAgendada utiliza o formato AAAA-MM-DD.
+- rebaixouTravada utiliza o valor persistido no banco.
+- Ocorrência sem histórico retorna uma lista vazia.
+- A consulta não altera os registros existentes.
+
+### Respostas HTTP
+
+| Status | Significado |
+|---|---|
+| 200 | Consulta realizada com sucesso |
+| 404 | Ocorrência não encontrada |
+| 422 | Identificador inválido |
+
+### Integração com H16
+
+A autorização por síndico deverá ser aplicada a este
+endpoint quando a autenticação da H16 for integrada.

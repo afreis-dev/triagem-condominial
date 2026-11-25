@@ -1,5 +1,12 @@
-import unicodedata
 import re
+import unicodedata
+
+try:
+    from .classificar_ia import classificar_com_ia
+    from .regras import REGRAS
+except ImportError:
+    from classificar_ia import classificar_com_ia
+    from regras import REGRAS
 
 PALAVRAS_RISCO = [
     "gas",
@@ -31,38 +38,25 @@ EXIBICAO_RISCO = {
     "agressao": "agressão",
 }
 
-REGRAS = [
-    (["falta de agua", "sem agua", "falta agua"], "alta", "manutencao", "zelador"),
-    (["vazamento"], "alta", "manutencao", "zelador"),
-    (["elevador parado", "elevador quebrou", "elevador travado"], "alta", "manutencao", "zelador"),
-    (["portao travou", "portao travado", "travou aberto"], "alta", "seguranca_acesso", "portaria"),
-    (["furto", "roubo", "assalto"], "alta", "seguranca_acesso", "sindico"),
-    (["sem energia", "sem luz", "falta de energia"], "alta", "manutencao", "zelador"),
-    (["esgoto entupido", "entupido", "refluxo"], "alta", "manutencao", "zelador"),
-    (["bomba d'agua", "bomba de agua", "bomba queimou"], "alta", "manutencao", "zelador"),
-    (["lampada"], "normal", "manutencao", "zelador"),
-    (["interfone"], "normal", "seguranca_acesso", "portaria"),
-    (["camera"], "normal", "seguranca_acesso", "portaria"),
-    (["torneira"], "normal", "manutencao", "zelador"),
-    (["barulho", "festa", "som alto"], "normal", "convivencia", "sindico"),
-    (["cachorro", "latindo"], "normal", "convivencia", "sindico"),
-    (["vaga", "carro parado na minha"], "normal", "convivencia", "sindico"),
-    (["mudanca"], "normal", "pedido_administrativo", "sindico"),
-    (["fumaca de cigarro"], "normal", "convivencia", "sindico"),
-    (["boleto", "segunda via"], "baixa", "pedido_administrativo", "sindico"),
-    (["reservar", "reserva", "churrasqueira", "salao"], "baixa", "pedido_administrativo", "sindico"),
-    (["declaracao"], "baixa", "pedido_administrativo", "sindico"),
-    (["duvida", "regimento"], "baixa", "duvida", "sindico"),
-]
-
 ORDEM = {"urgente": 4, "alta": 3, "normal": 2, "baixa": 1}
 
-def _normalizar(texto):
-    texto = texto.lower()
-    texto = "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
-    texto = re.sub(r"[^a-z0-9 ]", " ", texto)
-    texto = re.sub(r"\s+", " ", texto).strip()
-    return texto
+
+def normalizar(texto):
+    """Devolve o texto em minúsculas, sem acento e sem pontuação. Se não for texto, devolve vazio."""
+    if not isinstance(texto, str):
+        return ""
+    decomposto = unicodedata.normalize("NFKD", texto.lower())
+    sem_acento = "".join(c for c in decomposto if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", " ", sem_acento).strip()
+
+
+REGRAS_NORMALIZADAS = tuple((tuple(normalizar(palavra) for palavra in regra.palavras), regra) for regra in REGRAS)
+
+
+def _aparece(palavra, texto):
+    """Diz se a palavra aparece inteira no texto já padronizado."""
+    return f" {palavra} " in f" {texto} "
+
 
 def _palavra_risco(texto_norm):
     if "fumaca de cigarro" in texto_norm:
@@ -76,17 +70,19 @@ def _palavra_risco(texto_norm):
             return palavra
     return None
 
-def classificar(texto):
-    texto_norm = _normalizar(texto)
+
+def classificar_por_regras(texto):
+    """Acha a regra do PO de maior prioridade, aplica a trava de risco e, sem regra, devolve não reconhecida."""
+    texto_norm = normalizar(texto)
     melhor = None
-    for chaves, prioridade, categoria, responsavel in REGRAS:
-        if any(re.search(r"\b" + re.escape(_normalizar(c)) + r"\b", texto_norm) for c in chaves):
-            if melhor is None or ORDEM[prioridade] > ORDEM[melhor["prioridade"]]:
+    for palavras, regra in REGRAS_NORMALIZADAS:
+        if any(_aparece(palavra, texto_norm) for palavra in palavras):
+            if melhor is None or ORDEM[regra.prioridade] > ORDEM[melhor["prioridade"]]:
                 melhor = {
-                    "prioridade": prioridade,
-                    "categoria": categoria,
-                    "responsavel": responsavel,
-                    "motivo": "classificação de teste",
+                    "prioridade": regra.prioridade,
+                    "categoria": regra.categoria,
+                    "responsavel": regra.responsavel,
+                    "motivo": regra.motivo,
                     "travada": False,
                     "palavraDeRisco": None,
                 }
@@ -119,8 +115,9 @@ def classificar(texto):
     melhor["fonte"] = "regras"
     return melhor
 
+
 def aplicarTravaDeRisco(texto, resultado):
-    palavra = _palavra_risco(_normalizar(texto))
+    palavra = _palavra_risco(normalizar(texto))
     if palavra:
         exibicao = EXIBICAO_RISCO.get(palavra, palavra)
         resultado["prioridade"] = "urgente"
@@ -131,4 +128,15 @@ def aplicarTravaDeRisco(texto, resultado):
         resultado["responsavelSugerido"] = "sindico"
         resultado["palavra_de_risco"] = exibicao
         resultado["fonte"] = "regras"
-    return resultado  
+    return resultado
+
+
+def classificar(texto):
+    """Pede a classificação à IA, se estiver ligada, e usa as regras se ela falhar. A trava de risco roda por último."""
+    resultado = classificar_com_ia(texto)
+    if resultado is None:
+        return classificar_por_regras(texto)
+    resultado = aplicarTravaDeRisco(texto, resultado)
+    if resultado["travada"] and resultado["categoria"] == "nao_reconhecida":
+        resultado["categoria"] = classificar_por_regras(texto)["categoria"]
+    return resultado

@@ -78,31 +78,40 @@ def registrar_decisao(dados, conexao=None):
         if proprio:
             conexao.close()
 
-def buscar_decisoes(ocorrencia_id, conn):
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT id, acao, nota, criado_em
-        FROM registros_decisao
-        WHERE ocorrencia_id = %s
-        ORDER BY criado_em ASC
-        """,
-        (str(ocorrencia_id),),
-    )
-    linhas = cur.fetchall()
-    cur.close()
 
-    decisoes = []
-    for id_, acao, nota, criado_em in linhas:
-        nota_texto = nota or ""
-        rebaixou = "rebaix" in nota_texto.lower()
-        decisoes.append({
-            "id": str(id_),
-            "tipo": acao,
-            "acao": acao,
-            "nota": nota_texto,
-            "rebaixou_travada": rebaixou,
-            "criado_em": criado_em.isoformat() if criado_em else None,
-        })
+def buscar_decisoes(ocorrencia_id: int, conn):
+    """Consulta os registros de decisão em ordem cronológica."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, ocorrencia_id, tipo, quem_decidiu,
+                   origem, prioridade_sugerida, prioridade_final,
+                   motivo, acao, responsavel, data_agendada,
+                   nota, rebaixou_travada, data_hora
+            FROM registros_decisao
+            WHERE ocorrencia_id = %s
+            ORDER BY data_hora ASC, id ASC
+            """,
+            (ocorrencia_id,),
+        )
+        linhas = cur.fetchall()
 
-    return decisoes
+    return [
+        {
+            "id": linha[0],
+            "ocorrenciaId": linha[1],
+            "tipo": linha[2],
+            "quemDecidiu": linha[3],
+            "origem": linha[4],
+            "prioridadeSugerida": linha[5],
+            "prioridadeFinal": linha[6],
+            "motivo": linha[7],
+            "acao": linha[8],
+            "responsavel": linha[9],
+            "dataAgendada": linha[10].isoformat() if linha[10] else None,
+            "nota": linha[11],
+            "rebaixouTravada": linha[12],
+            "dataHora": linha[13].isoformat(),
+        }
+        for linha in linhas
+    ]

@@ -57,7 +57,10 @@ describe("detalhe da ocorrência", () => {
   it("only occurrences Em andamento can be concluded", () => {
     expect(podeConcluir(byId(1))).toBe(false);
     expect(concluirOcorrencia(byId(1), AGORA).status).toBe("nova");
-    expect(concluirOcorrencia(byId(13), AGORA).status).toBe("concluida");
+    const concluida = concluirOcorrencia(byId(13), AGORA);
+    expect(concluida).toMatchObject({ status: "concluida", concluidaEm: AGORA });
+    expect(podeConcluir(concluida)).toBe(false);
+    expect(concluirOcorrencia(concluida, AGORA)).toBe(concluida);
   });
 
   it("shows history oldest first", () => {
