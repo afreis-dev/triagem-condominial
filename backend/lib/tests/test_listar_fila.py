@@ -61,6 +61,7 @@ def test_devolve_os_campos_do_cartao(conexao, condominio):
             "motivo": "manutenção simples de área comum",
             "travada": False,
             "criadaEm": "2026-11-19T10:00:00+00:00",
+            "concluidaEm": None,
             "acao": None,
             "marcaAcao": None,
         }
@@ -72,6 +73,12 @@ def test_criada_em_e_texto_iso_com_fuso(conexao, condominio):
     inserir(conexao, condominio)
     criada_em = listar_fila(conexao=conexao)["ocorrencias"][0]["criadaEm"]
     assert datetime.fromisoformat(criada_em).tzinfo is not None
+
+
+def test_devolve_data_de_conclusao_em_utc(conexao, condominio):
+    inserir(conexao, condominio, status="concluida", concluida_em="2026-11-20 09:00:00-03")
+    cartao, = listar_fila(conexao=conexao)["ocorrencias"]
+    assert cartao["concluidaEm"] == "2026-11-20T12:00:00+00:00"
 
 
 def test_junta_as_ocorrencias_de_todos_os_condominios(conexao, condominio):

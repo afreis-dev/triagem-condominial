@@ -36,6 +36,25 @@ describe("fila de ocorrências", () => {
     expect(r.at(-1)?.prioridade).toBe("baixa");
   });
 
+  it("puts the oldest arrival first at equal priority, even within the same minute", () => {
+    const base = { ...OCORRENCIAS[0]!, status: "nova", prioridade: "urgente", minutosAtras: 2 } as const;
+    const lista = [
+      { ...base, id: 1, criadaEm: "2026-11-19T10:00:45Z" },
+      { ...base, id: 2, criadaEm: "2026-11-19T10:00:12Z" },
+    ];
+    expect(filtrarOcorrencias(lista, { status: "nova" }).map((o) => o.id)).toEqual([2, 1]);
+  });
+
+  it("sorts completed occurrences by completion date regardless of priority", () => {
+    const base = { ...OCORRENCIAS[0]!, status: "concluida" } as const;
+    const lista = [
+      { ...base, id: 1, prioridade: "urgente" as const, concluidaEm: "2026-11-19T10:00:00Z" },
+      { ...base, id: 2, prioridade: "baixa" as const, concluidaEm: "2026-11-20T10:00:00Z" },
+      { ...base, id: 3 },
+    ];
+    expect(filtrarOcorrencias(lista, { status: "concluida" }).map((o) => o.id)).toEqual([2, 1, 3]);
+  });
+
   it("puts a pasted message in the Nova tab with a suggested priority", () => {
     const o = criarDeMensagem(16, "solar-ipes", "[10:02] Ana: Cheiro de gás no bloco C\nPor favor venham rápido");
     expect(o.status).toBe("nova");

@@ -47,7 +47,9 @@ export interface Ocorrencia {
   /** Priority the system suggested when the occurrence arrived. */
   prioridadeSugerida: Prioridade;
   status: Status;
+  criadaEm?: string;
   concluidaEm?: string;
+  marcaAcao?: string;
   /** Minutes since the occurrence was opened (mock data, avoids clock-dependent SSR). */
   minutosAtras: number;
   motivo: string;
@@ -191,7 +193,19 @@ export function filtrarOcorrencias(lista: Ocorrencia[], f: Filtros): Ocorrencia[
         (!f.condominio || o.condominioId === f.condominio) &&
         (!f.prioridade || o.prioridade === f.prioridade),
     )
-    .sort((a, b) => ORDEM[a.prioridade] - ORDEM[b.prioridade] || a.minutosAtras - b.minutosAtras);
+    .sort((a, b) => {
+      if (f.status === "concluida") {
+        const dataA = a.concluidaEm ? Date.parse(a.concluidaEm) : 0;
+        const dataB = b.concluidaEm ? Date.parse(b.concluidaEm) : 0;
+        return dataB - dataA;
+      }
+      return (
+        ORDEM[a.prioridade] - ORDEM[b.prioridade] ||
+        (a.criadaEm && b.criadaEm
+          ? Date.parse(a.criadaEm) - Date.parse(b.criadaEm)
+          : b.minutosAtras - a.minutosAtras)
+      );
+    });
 }
 
 export function contarPorPrioridade(lista: Ocorrencia[]): Record<Prioridade, number> {

@@ -32,7 +32,7 @@ export function CartaoOcorrencia({
       to="/ocorrencia/$id"
       params={{ id: demonstracao ? `demo-${ocorrencia.id}` : String(ocorrencia.id) }}
       className={cn(
-        "relative block overflow-hidden rounded-xl border bg-card py-3 pl-4 pr-3.5 shadow-card transition-all",
+        "relative block min-h-[44px] overflow-hidden rounded-xl border bg-card py-3 pl-4 pr-3.5 shadow-card transition-all",
         "before:absolute before:inset-y-0 before:left-0",
         "hover:-translate-y-px hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         barra[ocorrencia.prioridade],
@@ -59,10 +59,18 @@ export function CartaoOcorrencia({
       </h3>
       {/* 3: origin */}
       <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icone className="size-3.5" aria-hidden />
-        <span>
+        <Icone className="size-3.5 shrink-0" aria-hidden />
+        <span className="shrink-0">
           Origem: <span className="font-medium text-foreground">{ocorrencia.origem}</span>
         </span>
+        {ocorrencia.marcaAcao && (
+          <span
+            className="min-w-0 truncate border-l pl-1.5 font-semibold text-primary"
+            title={ocorrencia.marcaAcao}
+          >
+            {ocorrencia.marcaAcao}
+          </span>
+        )}
       </p>
       {/* 4: short reason */}
       <p className="mt-0.5 truncate text-[13px] text-muted-foreground">

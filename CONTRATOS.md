@@ -256,6 +256,7 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
       "motivo": "manutenção simples de área comum",
       "travada": false,
       "criadaEm": "2026-11-19T14:10:00+00:00",
+      "concluidaEm": null,
       "acao": null
     }
   ]
@@ -269,6 +270,7 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
 | descricao | Texto completo. O título do cartão é o início dela |
 | prioridade, categoria, responsavelSugerido, motivo, travada | O que `classificar` devolveu. Se a classificação falhou, os três primeiros vêm `null` e o motivo é `não classificada, revisar` |
 | criadaEm | Texto ISO 8601 em UTC (`+00:00`). O cartão calcula o "há 2 h" a partir dele |
+| concluidaEm | Data da conclusão em ISO 8601 UTC, ou `null` se ainda não houver data registrada |
 | acao | Última ação que o síndico registrou (`delegar`, `agendar` ou `eu_mesmo`), ou `null`. É a marca de ação do cartão |
 
 ### Regras
