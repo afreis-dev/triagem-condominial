@@ -84,8 +84,18 @@ def _validar_uuid(id: str):
         raise HTTPException(status_code=400, detail="id inválido")
 
 # Endpoint - H04
+@app.get("/api/condominios")
+def listar_condominios_da_carteira(sindico=Depends(sindico_autenticado)):
+    with closing(conectar()) as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT id, nome FROM condominios WHERE sindico_id = %s ORDER BY nome, id",
+            (sindico["id"],),
+        )
+        return [{"id": id_, "nome": nome} for id_, nome in cursor.fetchall()]
+
+
 @app.post("/ocorrencias/colar", status_code=201)
-def colar(body: ColarBody):
+def colar(body: ColarBody, sindico=Depends(sindico_autenticado)):
     dados = {
         "origem": "whatsapp_sindico",
         "condominioId": body.condominioId,
@@ -96,6 +106,14 @@ def colar(body: ColarBody):
         "local": body.local,
     }
     with closing(conectar()) as conn, conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM condominios WHERE id = %s AND sindico_id = %s FOR SHARE",
+                (body.condominioId, sindico["id"]),
+            )
+            if cursor.fetchone() is None:
+                raise HTTPException(status_code=403, detail="Condomínio fora da sua carteira")
+
         resultado = salvar_ocorrencia(dados, conn)
     if not resultado["ok"]:
         raise HTTPException(status_code=422, detail=resultado["erros"])

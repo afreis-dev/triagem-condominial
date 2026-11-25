@@ -6,6 +6,8 @@ except RuntimeError:
     pytest.skip("instale o httpx2 para testar a rota", allow_module_level=True)
 
 import main  # noqa: E402
+from lib import auth_deps  # noqa: E402
+from lib.auth import criar_token  # noqa: E402
 
 
 class ConexaoDoTeste:
@@ -28,9 +30,18 @@ class ConexaoDoTeste:
 
 
 @pytest.fixture
-def cliente(conexao, monkeypatch):
+def cliente_sem_token(conexao, monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "segredo-exclusivo-para-testes-de-endpoints-2026")
     monkeypatch.setattr(main, "conectar", lambda: ConexaoDoTeste(conexao))
-    return TestClient(main.app, raise_server_exceptions=False)
+    monkeypatch.setattr(auth_deps, "conectar", main.conectar)
+    with TestClient(main.app, raise_server_exceptions=False) as cliente:
+        yield cliente
+
+
+@pytest.fixture
+def cliente(cliente_sem_token, sindico):
+    cliente_sem_token.headers["Authorization"] = f"Bearer {criar_token(sindico)}"
+    return cliente_sem_token
 
 
 def colar(cliente, condominio, **campos):
@@ -52,6 +63,32 @@ def contar(conexao):
     with conexao.cursor() as cur:
         cur.execute("SELECT count(*) FROM ocorrencias")
         return cur.fetchone()[0]
+
+
+@pytest.mark.parametrize("token", [None, "Bearer token-invalido"])
+def test_exige_token_valido(cliente_sem_token, conexao, condominio, token):
+    if token is not None:
+        cliente_sem_token.headers["Authorization"] = token
+    assert colar(cliente_sem_token, condominio).status_code == 401
+    assert contar(conexao) == 0
+
+
+def test_rejeita_condominio_de_outro_sindico(cliente_sem_token, conexao, condominio):
+    with conexao, conexao.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO sindicos (nome, email) VALUES (%s, %s) RETURNING id",
+            ("Outro síndico", "outro@teste.com"),
+        )
+        outro_sindico = cursor.fetchone()[0]
+
+    cliente_sem_token.headers["Authorization"] = f"Bearer {criar_token(outro_sindico)}"
+    assert colar(cliente_sem_token, condominio).status_code == 403
+    assert contar(conexao) == 0
+
+
+def test_rejeita_condominio_inexistente(cliente, conexao):
+    assert colar(cliente, 999999).status_code == 403
+    assert contar(conexao) == 0
 
 
 def test_grava_a_mensagem_colada_como_whatsapp_do_sindico(cliente, conexao, condominio):
@@ -114,7 +151,6 @@ def test_mais_de_2000_caracteres_no_texto_colado_devolve_o_erro_da_descricao(cli
     [
         ({"descricao": "   "}, {"descricao": "Descreva a ocorrência"}),
         ({"celular": "123"}, {"celular": "Celular deve ter 10 ou 11 dígitos"}),
-        ({"condominioId": 999999}, {"condominioId": "Condomínio não encontrado"}),
     ],
 )
 def test_devolve_os_erros_da_funcao_em_422_e_nao_grava(cliente, conexao, condominio, campos, erros):

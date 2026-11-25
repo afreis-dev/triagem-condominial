@@ -3,9 +3,12 @@
 
 import os
 import uuid
+from pathlib import Path
 
 import psycopg2
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 
@@ -35,11 +38,13 @@ def conexao():
 
 
 def test_migration_aplicada(conexao):
+    config = Config(Path(__file__).resolve().parents[1] / "alembic.ini")
+    revisoes_esperadas = set(ScriptDirectory.from_config(config).get_heads())
     with conexao.cursor() as cursor:
         cursor.execute("SELECT version_num FROM alembic_version")
-        versao = cursor.fetchone()[0]
+        revisoes_aplicadas = {versao for (versao,) in cursor.fetchall()}
 
-    assert versao == "dc53387e1802"
+    assert revisoes_aplicadas == revisoes_esperadas
 
 
 def test_todas_as_tabelas_existem():
