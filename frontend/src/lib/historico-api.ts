@@ -110,15 +110,12 @@ export function mapearRegistro(registro: RegistroDecisao): EventoHistorico {
   if (registro.motivo) detalhes.push(registro.motivo);
   if (registro.nota) detalhes.push(registro.nota);
 
-  if (registro.rebaixouTravada) {
-    detalhes.push("Prioridade travada rebaixada");
-  }
-
   return {
     quando: registro.dataHora,
     autor: registro.quemDecidiu === "sistema" ? "Sistema" : "Síndico",
     acao,
     motivo: detalhes.length ? detalhes.join(" · ") : undefined,
+    rebaixouTravada: registro.rebaixouTravada,
   };
 }
 
