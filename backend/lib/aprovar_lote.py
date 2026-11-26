@@ -6,7 +6,8 @@ def listar_para_aprovacao(conn, sindico_id):
     """H15: novas não-urgentes, sem travada, só da carteira do síndico."""
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT o.id, o.protocolo, o.descricao, o.status, o.prioridade
+            SELECT o.id, o.protocolo, o.descricao, o.status, o.prioridade, 
+            o.responsavel_sugerido, o.motivo
             FROM ocorrencias o
             JOIN condominios c ON c.id = o.condominio_id
             WHERE o.status = 'nova'
@@ -17,7 +18,8 @@ def listar_para_aprovacao(conn, sindico_id):
         """, (sindico_id,))
         linhas = cur.fetchall()
     return [
-        {"id": r[0], "protocolo": r[1], "descricao": r[2], "status": r[3], "prioridade": r[4]}
+        {"id": r[0], "protocolo": r[1], "descricao": r[2], "status": r[3], "prioridade": r[4],
+         "responsavel_sugerido": r[5], "motivo": r[6],}
         for r in linhas
     ]
 
