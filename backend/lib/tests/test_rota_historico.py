@@ -1,12 +1,27 @@
 from contextlib import nullcontext
 
 from fastapi.testclient import TestClient
+import pytest
 
 import backend.main as main
 from lib.registrar_decisao import registrar_decisao
 
 
 client = TestClient(main.app)
+
+@pytest.fixture(autouse=True)
+def autenticar_sindico_do_teste(sindico):
+    main.app.dependency_overrides[main.sindico_autenticado] = (
+        lambda: {"id": sindico, "nome": "Síndico Teste"}
+    )
+
+    try:
+        yield
+    finally:
+        main.app.dependency_overrides.pop(
+            main.sindico_autenticado, None
+        )
+
 
 
 def preparar_conexao(monkeypatch, conexao):
@@ -74,11 +89,22 @@ def test_endpoint_ocorrencia_inexistente(
 
 
 def test_endpoint_id_invalido():
-    resposta = client.get(
-        "/api/ocorrencias/abc/decisoes"
+    # Simula um síndico autenticado para testar
+    # especificamente a validação do identificador.
+    main.app.dependency_overrides[main.sindico_autenticado] = (
+        lambda: {"id": 1, "nome": "Síndico Teste"}
     )
 
-    assert resposta.status_code == 422
+    try:
+        resposta = client.get(
+            "/api/ocorrencias/abc/decisoes"
+        )
+
+        assert resposta.status_code == 422
+    finally:
+        main.app.dependency_overrides.pop(
+            main.sindico_autenticado, None
+        )
 
 
 def test_endpoint_sem_prefixo_api(

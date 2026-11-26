@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type EventoHistorico, type Prioridade } from "./ocorrencias";
+import { obterToken } from "./auth";
 
 export type RegistroDecisao = {
   id: number;
@@ -44,19 +45,13 @@ const ORIGENS: Record<string, string> = {
   whatsapp_sindico: "WhatsApp",
 };
 
-export function mapearRegistro(
-  registro: RegistroDecisao,
-): EventoHistorico {
-  const sugerida = registro.prioridadeSugerida
-    ? PRIORIDADES[registro.prioridadeSugerida]
-    : null;
+export function mapearRegistro(registro: RegistroDecisao): EventoHistorico {
+  const sugerida = registro.prioridadeSugerida ? PRIORIDADES[registro.prioridadeSugerida] : null;
 
-  const final = registro.prioridadeFinal
-    ? PRIORIDADES[registro.prioridadeFinal]
-    : null;
+  const final = registro.prioridadeFinal ? PRIORIDADES[registro.prioridadeFinal] : null;
 
   const responsavel = registro.responsavel
-    ? RESPONSAVEIS[registro.responsavel] ?? registro.responsavel
+    ? (RESPONSAVEIS[registro.responsavel] ?? registro.responsavel)
     : null;
 
   let acao: string;
@@ -87,16 +82,12 @@ export function mapearRegistro(
 
     case "acao":
       if (registro.acao === "delegar") {
-        acao = responsavel
-          ? `Delegada para ${responsavel}`
-          : "Ocorrência delegada";
+        acao = responsavel ? `Delegada para ${responsavel}` : "Ocorrência delegada";
       } else if (registro.acao === "agendar") {
         acao = "Ocorrência agendada";
 
         if (registro.dataAgendada) {
-          detalhes.push(
-            `Data: ${registro.dataAgendada.split("-").reverse().join("/")}`,
-          );
+          detalhes.push(`Data: ${registro.dataAgendada.split("-").reverse().join("/")}`);
         }
       } else if (registro.acao === "eu_mesmo") {
         acao = "Síndico assumiu a ocorrência";
@@ -131,20 +122,24 @@ export function mapearRegistro(
   };
 }
 
-export function useHistoricoApi(
-  id: number,
-  habilitada = true,
-) {
+export function useHistoricoApi(id: number, habilitada = true) {
   return useQuery({
     queryKey: ["historico", id],
     enabled: habilitada,
     retry: false,
     queryFn: async ({ signal }) => {
-      const resposta = await fetch(
-        `/api/ocorrencias/${id}/decisoes`,
-        { signal },
-      );
+      const token = obterToken();
 
+      if (!token) {
+        throw new Error("Entre novamente para consultar o histórico.");
+      }
+
+      const resposta = await fetch(`/api/ocorrencias/${id}/decisoes`, {
+        signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (!resposta.ok) {
         throw new Error("Não foi possível consultar o histórico.");
       }

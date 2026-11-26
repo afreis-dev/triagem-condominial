@@ -27,10 +27,27 @@ class ConexaoDoTeste:
         pass
 
 
+
 @pytest.fixture
-def cliente(conexao, monkeypatch):
-    monkeypatch.setattr(main, "conectar", lambda: ConexaoDoTeste(conexao))
-    return TestClient(main.app, raise_server_exceptions=False)
+def cliente(conexao, sindico, monkeypatch):
+    monkeypatch.setattr(
+        main, "conectar", lambda: ConexaoDoTeste(conexao)
+    )
+
+    main.app.dependency_overrides[main.sindico_autenticado] = (
+        lambda: {"id": sindico, "nome": "Síndico Teste"}
+    )
+
+    try:
+        yield TestClient(
+            main.app,
+            raise_server_exceptions=False,
+        )
+    finally:
+        main.app.dependency_overrides.pop(
+            main.sindico_autenticado, None
+        )
+
 
 
 @pytest.fixture
