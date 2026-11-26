@@ -2,8 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from contextlib import closing
-from datetime import date
-from uuid import UUID
+from datetime import date, timezone
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -75,13 +74,39 @@ class ColarBody(BaseModel):
 
 class PrioridadeBody(BaseModel):
     prioridade: str
-    motivo: Optional[str] = None
+    motivo: Optional[str] = Field(default=None, max_length=500)
 
-def _validar_uuid(id: str):
-    try:
-        return UUID(id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="id inválido")
+def _ocorrencia_da_carteira(cursor, id: int, sindico_id: int, *, bloquear=False):
+    consulta = """
+        SELECT o.id, o.protocolo, o.condominio_id, c.nome, o.descricao, o.origem,
+               o.status, o.prioridade, o.motivo, o.criada_em, o.concluida_em,
+               o.nome, o.apartamento, o.celular, o.local, o.travada,
+               o.palavra_de_risco, COALESCE(entrada.prioridade_sugerida, o.prioridade),
+               o.categoria, o.responsavel_sugerido
+        FROM ocorrencias o
+        JOIN condominios c ON c.id = o.condominio_id
+        LEFT JOIN LATERAL (
+            SELECT prioridade_sugerida
+            FROM registros_decisao
+            WHERE ocorrencia_id = o.id AND prioridade_sugerida IS NOT NULL
+              AND tipo IN ('entrada', 'prioridade_alterada', 'prioridade_confirmada')
+            ORDER BY (tipo = 'entrada') DESC, data_hora, id LIMIT 1
+        ) entrada ON TRUE
+        WHERE o.id = %s AND c.sindico_id = %s
+    """
+    if bloquear:
+        consulta += " FOR UPDATE OF o FOR SHARE OF c"
+    cursor.execute(consulta, (id, sindico_id))
+    linha = cursor.fetchone()
+    if linha is None:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    campos = (
+        "id", "protocolo", "condominioId", "condominio", "descricao", "origem",
+        "status", "prioridade", "motivo", "criadaEm", "concluidaEm",
+        "nome", "apartamento", "celular", "local", "travada",
+        "palavraDeRisco", "prioridadeSugerida", "categoria", "responsavel",
+    )
+    return dict(zip(campos, linha))
 
 # Endpoint - H04
 @app.get("/api/condominios")
@@ -126,59 +151,20 @@ def listar_ocorrencias(sindico=Depends(sindico_autenticado)):
     return rota_listar_fila(sindico)
 
 
-
 # Detalhe
 @app.get("/ocorrencias/{id}")
-def buscar_ocorrencia(
-    id: int,
-    sindico=Depends(sindico_autenticado),
-):
-    with closing(conectar()) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    o.id,
-                    o.protocolo,
-                    o.condominio_id,
-                    o.descricao,
-                    o.prioridade,
-                    o.categoria,
-                    o.responsavel_sugerido,
-                    o.status,
-                    o.criada_em
-                FROM ocorrencias o
-                JOIN condominios c
-                    ON c.id = o.condominio_id
-                WHERE o.id = %s
-                  AND c.sindico_id = %s
-                """,
-                (id, sindico["id"]),
-            )
-            ocorrencia = cursor.fetchone()
-
-    if ocorrencia is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Ocorrência não encontrada",
-        )
-
+def buscar_ocorrencia(id: int, sindico=Depends(sindico_autenticado)):
+    with closing(conectar()) as conn, conn.cursor() as cursor:
+        ocorrencia = _ocorrencia_da_carteira(cursor, id, sindico["id"])
+    for campo in ("criadaEm", "concluidaEm"):
+        if ocorrencia[campo] is not None:
+            ocorrencia[campo] = ocorrencia[campo].astimezone(timezone.utc).isoformat()
     return {
-        "id": ocorrencia[0],
-        "protocolo": ocorrencia[1],
-        "condominio_id": ocorrencia[2],
-        "texto_colado": ocorrencia[3],
-        "descricao": ocorrencia[3],
-        "prioridade": ocorrencia[4],
-        "categoria": ocorrencia[5],
-        "responsavel": ocorrencia[6],
-        "status": ocorrencia[7],
-        "criado_em": (
-            ocorrencia[8].isoformat()
-            if ocorrencia[8] else None
-        ),
+        **ocorrencia,
+        "condominio_id": ocorrencia["condominioId"],
+        "texto_colado": ocorrencia["descricao"],
+        "criado_em": ocorrencia["criadaEm"],
     }
-
 
 # Endpoint - H14
 @app.get("/api/ocorrencias/{id}/decisoes")
@@ -284,34 +270,22 @@ def confirmar_acao(
 
 
 # H10
-
 @app.patch("/ocorrencias/{id}/prioridade")
-def alterar_prioridade(
-    id: int,
-    body: PrioridadeBody,
-    sindico=Depends(sindico_autenticado),
-):
+def alterar_prioridade(id: int, body: PrioridadeBody, sindico=Depends(sindico_autenticado)):
     with closing(conectar()) as conn, conn, conn.cursor() as cursor:
-        verificar_acesso_ocorrencia(cursor, id, sindico["id"])
-        cursor.execute(
-            "SELECT prioridade FROM ocorrencias WHERE id = %s FOR UPDATE",
-            (id,),
+        ocorrencia = _ocorrencia_da_carteira(cursor, id, sindico["id"], bloquear=True)
+        if ocorrencia["status"] == "concluida":
+            raise HTTPException(status_code=409, detail="A ocorrência está concluída")
+        sugerida = ocorrencia["prioridadeSugerida"]
+        alterada = body.prioridade != sugerida or (
+            ocorrencia["travada"] and body.prioridade != "urgente"
         )
-        ocorrencia = cursor.fetchone()
-        if ocorrencia is None:
-            raise HTTPException(status_code=404, detail="ocorrência não encontrada")
-        cursor.execute(
-            "SELECT prioridade_sugerida FROM registros_decisao "
-            "WHERE ocorrencia_id = %s AND tipo = 'entrada' ORDER BY data_hora, id LIMIT 1",
-            (id,),
-        )
-        entrada = cursor.fetchone()
         resultado = registrar_decisao(
             {
-                "tipo": "prioridade_alterada",
+                "tipo": "prioridade_alterada" if alterada else "prioridade_confirmada",
                 "ocorrenciaId": id,
                 "quemDecidiu": "sindico",
-                "prioridadeSugerida": entrada[0] if entrada and entrada[0] else ocorrencia[0],
+                "prioridadeSugerida": sugerida,
                 "prioridadeFinal": body.prioridade,
                 "motivo": body.motivo,
             },
@@ -319,7 +293,8 @@ def alterar_prioridade(
         )
         if not resultado["ok"]:
             raise HTTPException(status_code=422, detail=resultado["erros"])
-        cursor.execute("UPDATE ocorrencias SET prioridade = %s WHERE id = %s", (body.prioridade, id))
+        if body.prioridade != ocorrencia["prioridade"]:
+            cursor.execute("UPDATE ocorrencias SET prioridade = %s WHERE id = %s", (body.prioridade, id))
     return {"id": id, "prioridade": body.prioridade}
 
 

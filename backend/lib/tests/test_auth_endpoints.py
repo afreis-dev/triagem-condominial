@@ -624,14 +624,11 @@ def test_alterar_prioridade_do_proprio_sindico_deve_ser_permitido(
         auth_deps, "conectar", lambda: conexao_auth
     )
 
-    # 1ª consulta: autorização pela carteira
-    # 2ª consulta: prioridade atual
-    # 3ª consulta: prioridade originalmente sugerida
-    cursor.fetchone.side_effect = [
-        (1,),
-        ("normal",),
-        ("normal",),
-    ]
+    cursor.fetchone.return_value = (
+        1, "TS-000001", 3, "Vista Verde", "Lâmpada queimada", "morador",
+        "nova", "normal", None, None, None,
+        None, None, None, None, False, None, "normal", "manutencao", "zelador",
+    )
 
     # Simula o registro da decisão no histórico
     registrar_mock = MagicMock(return_value={"ok": True})
@@ -734,15 +731,9 @@ def test_detalhe_do_proprio_sindico_deve_ser_permitido(
 
     # Simula uma ocorrência da carteira do síndico
     cursor.fetchone.return_value = (
-        1,                       # id
-        "TS-000001",             # protocolo
-        3,                       # condominio_id
-        "Lâmpada queimada",      # descricao
-        "normal",                # prioridade
-        "manutencao",            # categoria
-        "zelador",               # responsavel_sugerido
-        "nova",                  # status
-        datetime(2026, 11, 26, tzinfo=timezone.utc),
+        1, "TS-000001", 3, "Vista Verde", "Lâmpada queimada", "morador",
+        "nova", "normal", None, datetime(2026, 11, 26, tzinfo=timezone.utc), None,
+        None, None, None, None, False, None, "normal", "manutencao", "zelador",
     )
 
     resposta = api.get(
