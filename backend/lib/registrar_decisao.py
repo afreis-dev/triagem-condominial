@@ -102,8 +102,6 @@ def _validar(dados):
                 erros["motivo"] = "Informe o motivo da mudança"
     elif tipo == "acao":
         _validar_acao(dados, erros, valores)
-    elif tipo == "acao":
-        _validar_acao(dados, erros, valores)
     elif tipo in ("aprovacao_lote", "desfazer_aprovacao_lote"):
         valores["prioridade_final"] = _prioridade(dados, "prioridadeFinal", erros)
         valores["responsavel"] = texto(dados.get("responsavel"))
@@ -133,7 +131,7 @@ def _gravar(conexao, erros, valores):
 def registrar_decisao(dados, conexao=None):
     """Valida e grava um registro no histórico da ocorrência. Só insere, nunca altera nem apaga."""
     erros, valores = _validar(dados if isinstance(dados, dict) else {})
-    if valores is None or valores["ocorrencia_id"] is None:
+    if valores is None or erros:
         return {"ok": False, "erros": erros}
     proprio = conexao is None
     if proprio:
