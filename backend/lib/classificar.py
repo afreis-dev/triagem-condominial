@@ -57,20 +57,6 @@ def _aparece(palavra, texto):
     """Diz se a palavra aparece inteira no texto já padronizado."""
     return f" {palavra} " in f" {texto} "
 
-
-def _palavra_risco(texto_norm):
-    if "fumaca de cigarro" in texto_norm:
-        texto_sem_excecao = texto_norm.replace("fumaca de cigarro", "")
-    else:
-        texto_sem_excecao = texto_norm
-    if "cheiro de gas" in texto_sem_excecao:
-        return "gas"
-    for palavra in PALAVRAS_RISCO:
-        if re.search(r"\b" + re.escape(palavra) + r"\b", texto_sem_excecao):
-            return palavra
-    return None
-
-
 def classificar_por_regras(texto):
     """Acha a regra do PO de maior prioridade, aplica a trava de risco e, sem regra, devolve não reconhecida."""
     texto_norm = normalizar(texto)
@@ -140,3 +126,44 @@ def classificar(texto):
     if resultado["travada"] and resultado["categoria"] == "nao_reconhecida":
         resultado["categoria"] = classificar_por_regras(texto)["categoria"]
     return resultado
+
+def buscarPalavrasDeRisco(conexao=None):
+    """Lê as palavras do banco. Sem redeploy: inseriu no banco, já trava."""
+    try:
+        if conexao is None:
+            from .conexao import conectar
+            conn = conectar()
+            fechar = True
+        else:
+            conn = conexao
+            fechar = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT palavra FROM palavras_risco ORDER BY LENGTH(palavra) DESC, ordem")
+                rows = [r[0] for r in cur.fetchall()]
+            # guarda o original com acento pra exibir "vazamento de gás"
+            for original in rows:
+                EXIBICAO_RISCO.setdefault(normalizar(original), original)
+            palavras = [normalizar(r) for r in rows]
+            return palavras or list(PALAVRAS_RISCO)
+        finally:
+            if fechar:
+                conn.close()
+    except Exception:
+        return list(PALAVRAS_RISCO)
+
+def _palavra_risco(texto_norm, palavras=None):
+    if palavras is None:
+        palavras = buscarPalavrasDeRisco()
+
+    palavras = sorted(palavras, key=len, reverse=True)
+    if "fumaca de cigarro" in texto_norm:
+        texto_sem_excecao = texto_norm.replace("fumaca de cigarro", "")
+    else:
+        texto_sem_excecao = texto_norm
+    if "cheiro de gas" in texto_sem_excecao:
+        return "gas"
+    for palavra in palavras:
+        if re.search(r"\b" + re.escape(palavra) + r"\b", texto_sem_excecao):
+            return palavra
+    return None
