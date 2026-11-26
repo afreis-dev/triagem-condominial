@@ -80,6 +80,9 @@ export function Historico({
                     {e.motivo}
                   </p>
                 )}
+                {e.rebaixouTravada && (
+                  <p className="mt-0.5 text-sm text-urgente">Prioridade travada rebaixada</p>
+                )}
               </li>
             );
           })}

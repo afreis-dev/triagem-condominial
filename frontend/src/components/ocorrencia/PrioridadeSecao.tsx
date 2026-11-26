@@ -10,11 +10,13 @@ import {
   PRIORIDADES,
   alertaDeRisco,
   aplicarMudancaPrioridade,
+  exigeMotivoPrioridade,
   validarMudancaPrioridade,
   type Ocorrencia,
   type Prioridade,
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia } from "@/lib/ocorrencias-store";
+import { usePrioridadeApi } from "@/lib/fila-api";
 import { ErroCampo, Secao, campoErro } from "./Secao";
 
 const opcao = cva(
@@ -31,28 +33,43 @@ const opcao = cva(
   },
 );
 
-export function PrioridadeSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
-  const [escolhida, setEscolhida] = useState<Prioridade>(ocorrencia.prioridade);
+export function PrioridadeSecao({ ocorrencia, demonstracao }: {
+  ocorrencia: Ocorrencia;
+  demonstracao: boolean;
+}) {
+  const [escolhida, setEscolhida] = useState<Prioridade>(ocorrencia.prioridadeSugerida);
   const [motivo, setMotivo] = useState("");
   const [tentou, setTentou] = useState(false);
-  const mudou = escolhida !== ocorrencia.prioridade;
-  const alerta = mudou ? alertaDeRisco(ocorrencia, escolhida) : null;
-  const erro = tentou ? validarMudancaPrioridade(motivo) : undefined;
-  const bloqueado = ocorrencia.status === "concluida";
+  const api = usePrioridadeApi(String(ocorrencia.id));
+  const requerMotivo = exigeMotivoPrioridade(ocorrencia, escolhida);
+  const alerta = alertaDeRisco(ocorrencia, escolhida);
+  const erro = tentou && requerMotivo ? validarMudancaPrioridade(motivo) : undefined;
+  const concluida = ocorrencia.status === "concluida";
+  const bloqueado = concluida || api.isPending;
 
   function cancelar() {
-    setEscolhida(ocorrencia.prioridade);
+    setEscolhida(ocorrencia.prioridadeSugerida);
     setMotivo("");
     setTentou(false);
   }
 
-  function salvar() {
+  async function salvar() {
+    if (bloqueado) return;
     setTentou(true);
-    if (validarMudancaPrioridade(motivo)) return;
-    atualizarOcorrencia(ocorrencia.id, (o) =>
-      aplicarMudancaPrioridade(o, escolhida, motivo, new Date().toISOString()),
-    );
-    toast.success("Prioridade alterada");
+    if (requerMotivo && validarMudancaPrioridade(motivo)) return;
+    try {
+      if (demonstracao) {
+        atualizarOcorrencia(ocorrencia.id, (o) =>
+          aplicarMudancaPrioridade(o, escolhida, motivo, new Date().toISOString()),
+        );
+      } else {
+        await api.mutateAsync({ prioridade: escolhida, ...(requerMotivo ? { motivo: motivo.trim() } : {}) });
+      }
+    } catch (erro) {
+      toast.error(erro instanceof Error ? erro.message : "Não foi possível confirmar a prioridade.");
+      return;
+    }
+    toast.success(requerMotivo ? "Prioridade alterada" : "Prioridade confirmada");
     setMotivo("");
     setTentou(false);
   }
@@ -68,7 +85,10 @@ export function PrioridadeSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
             aria-checked={escolhida === p.id}
             data-ativo={escolhida === p.id}
             disabled={bloqueado}
-            onClick={() => setEscolhida(p.id)}
+            onClick={() => {
+              setEscolhida(p.id);
+              setTentou(false);
+            }}
             className={opcao({ prioridade: p.id }) + " bg-surface text-muted-foreground hover:text-foreground"}
           >
             {p.label}
@@ -79,7 +99,7 @@ export function PrioridadeSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
         ))}
       </div>
 
-      {mudou && (
+      {requerMotivo && !concluida && (
         <div className="mt-4 grid gap-3">
           {alerta && (
             <Alert variant="destructive" className="border-urgente/40 bg-urgente-soft text-urgente">
@@ -96,6 +116,8 @@ export function PrioridadeSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
               rows={3}
               maxLength={500}
               value={motivo}
+              disabled={bloqueado}
+              aria-required
               onChange={(e) => setMotivo(e.target.value)}
               placeholder="Explique por que a prioridade mudou"
               aria-invalid={Boolean(erro)}
@@ -104,14 +126,18 @@ export function PrioridadeSecao({ ocorrencia }: { ocorrencia: Ocorrencia }) {
             />
             {erro && <ErroCampo id="motivo-mudanca-erro">{erro}</ErroCampo>}
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1 sm:flex-none" onClick={cancelar}>
+        </div>
+      )}
+      {!concluida && (
+        <div className="mt-4 flex gap-2">
+          {requerMotivo && escolhida !== ocorrencia.prioridadeSugerida && (
+            <Button disabled={bloqueado} variant="outline" className="flex-1 sm:flex-none" onClick={cancelar}>
               Cancelar
             </Button>
-            <Button className="flex-1 sm:flex-none" onClick={salvar}>
-              Salvar prioridade
-            </Button>
-          </div>
+          )}
+          <Button disabled={bloqueado} className="flex-1 sm:flex-none" onClick={() => void salvar()}>
+            {api.isPending ? "Confirmando…" : escolhida === "urgente" ? "Confirmar urgente" : "Confirmar prioridade"}
+          </Button>
         </div>
       )}
     </Secao>

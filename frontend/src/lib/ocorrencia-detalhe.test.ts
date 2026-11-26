@@ -23,7 +23,7 @@ describe("detalhe da ocorrência", () => {
 
   it("warns when downgrading an occurrence with a risk word", () => {
     expect(alertaDeRisco(byId(5), "normal")).toBe(
-      "Esta ocorrência tem palavra de risco: gás. Explique por que não é urgente",
+      "Esta ocorrência tem palavra de risco: gás. Explique por que não é urgente.",
     );
   });
 

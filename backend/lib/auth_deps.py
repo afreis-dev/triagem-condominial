@@ -34,3 +34,22 @@ def sindico_autenticado(
         "nome": sindico[1],
         "email": sindico[2],
     }
+
+
+def verificar_acesso_ocorrencia(cursor, ocorrencia_id: int, sindico_id: int):
+    """Confirma que a ocorrência pertence à carteira do síndico."""
+    cursor.execute(
+        """
+        SELECT o.id
+        FROM ocorrencias o
+        JOIN condominios c ON c.id = o.condominio_id
+        WHERE o.id = %s AND c.sindico_id = %s
+        """,
+        (ocorrencia_id, sindico_id),
+    )
+
+    if cursor.fetchone() is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ocorrência não encontrada",
+        )
