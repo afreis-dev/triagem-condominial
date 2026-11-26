@@ -16,7 +16,7 @@ from lib.registrar_decisao import buscar_decisoes, registrar_decisao
 from lib.salvar_ocorrencia import salvar_ocorrencia
 from lib.concluir_ocorrencia import concluir_ocorrencia
 from lib.auth import criar_token, verificar_senha
-from lib.auth_deps import sindico_autenticado
+from lib.auth_deps import sindico_autenticado, verificar_acesso_ocorrencia
 from rotas.fila import rota_listar_fila
 
 app = FastAPI(title="Triagem Condominial")
@@ -126,59 +126,87 @@ def listar_ocorrencias(sindico=Depends(sindico_autenticado)):
     return rota_listar_fila(sindico)
 
 
+
 # Detalhe
 @app.get("/ocorrencias/{id}")
-def buscar_ocorrencia(id: str):
-    oid = _validar_uuid(id)
-    conn = conectar()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, condominio_id, descricao, prioridade, categoria,
-                   responsavel, status, criado_em
-            FROM ocorrencias WHERE id = %s
-        """, (str(oid),))
-        r = cur.fetchone()
-        cur.close()
-        if not r:
-            raise HTTPException(status_code=404, detail="ocorrência não encontrada")
-        return {
-            "id": str(r[0]), "condominio_id": str(r[1]),
-            "texto_colado": r[2], "descricao": r[2],
-            "prioridade": r[3], "categoria": r[4],
-            "responsavel": r[5], "status": r[6],
-            "criado_em": r[7].isoformat() if r[7] else None,
-        }
-    finally:
-        conn.close()
+def buscar_ocorrencia(
+    id: int,
+    sindico=Depends(sindico_autenticado),
+):
+    with closing(conectar()) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    o.id,
+                    o.protocolo,
+                    o.condominio_id,
+                    o.descricao,
+                    o.prioridade,
+                    o.categoria,
+                    o.responsavel_sugerido,
+                    o.status,
+                    o.criada_em
+                FROM ocorrencias o
+                JOIN condominios c
+                    ON c.id = o.condominio_id
+                WHERE o.id = %s
+                  AND c.sindico_id = %s
+                """,
+                (id, sindico["id"]),
+            )
+            ocorrencia = cursor.fetchone()
+
+    if ocorrencia is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ocorrência não encontrada",
+        )
+
+    return {
+        "id": ocorrencia[0],
+        "protocolo": ocorrencia[1],
+        "condominio_id": ocorrencia[2],
+        "texto_colado": ocorrencia[3],
+        "descricao": ocorrencia[3],
+        "prioridade": ocorrencia[4],
+        "categoria": ocorrencia[5],
+        "responsavel": ocorrencia[6],
+        "status": ocorrencia[7],
+        "criado_em": (
+            ocorrencia[8].isoformat()
+            if ocorrencia[8] else None
+        ),
+    }
+
 
 # Endpoint - H14
 @app.get("/api/ocorrencias/{id}/decisoes")
 @app.get("/ocorrencias/{id}/decisoes")
-def listar_decisoes(id: int):
+def listar_decisoes(id: int, sindico=Depends(sindico_autenticado)):
     with closing(conectar()) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM ocorrencias WHERE id = %s",
-                (id,),
-            )
-            if cur.fetchone() is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Ocorrência não encontrada",
-                )
+            verificar_acesso_ocorrencia(cur, id, sindico["id"])
 
         return buscar_decisoes(id, conn)
 
-#Endpoint - H13
+
+# Endpoint - H13
 @app.patch("/api/ocorrencias/{id}/concluir")
 @app.patch("/ocorrencias/{id}/concluir")
-def concluir(id: int):
-    resultado = concluir_ocorrencia(id)
+def concluir(id: int, sindico=Depends(sindico_autenticado)):
+    with closing(conectar()) as conn, conn:
+        with conn.cursor() as cursor:
+            verificar_acesso_ocorrencia(cursor, id, sindico["id"])
+
+        resultado = concluir_ocorrencia(id, conexao=conn)
+
     if resultado["ok"]:
         return resultado
+
     codigo = 404 if "ocorrenciaId" in resultado["erros"] else 409
     return JSONResponse(content=resultado, status_code=codigo)
+
 
 
 class DecisaoAcao(BaseModel):
@@ -210,9 +238,14 @@ def _papeis_delegaveis(cursor, condominio_id):
     return [papel for (papel,) in cursor.fetchall()]
 
 
+
 @app.get("/ocorrencias/{id}/responsaveis")
-def listar_responsaveis_ocorrencia(id: int):
+def listar_responsaveis_ocorrencia(
+    id: int,
+    sindico=Depends(sindico_autenticado),
+):
     with closing(conectar()) as conn, conn.cursor() as cursor:
+        verificar_acesso_ocorrencia(cursor, id, sindico["id"])
         condominio_id, sugerido, _ = _consultar_ocorrencia_acao(cursor, id)
         papeis = _papeis_delegaveis(cursor, condominio_id)
     return {
@@ -222,11 +255,16 @@ def listar_responsaveis_ocorrencia(id: int):
 
 
 @app.post("/ocorrencias/{id}/acoes", status_code=201)
-def confirmar_acao(id: int, decisao: DecisaoAcao):
+def confirmar_acao(
+    id: int,
+    decisao: DecisaoAcao,
+    sindico=Depends(sindico_autenticado),
+):
     if decisao.acao == "agendar" and decisao.dataAgendada is None:
         raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
 
     with closing(conectar()) as conn, conn, conn.cursor() as cursor:
+        verificar_acesso_ocorrencia(cursor, id, sindico["id"])
         condominio_id, _, status = _consultar_ocorrencia_acao(cursor, id, bloquear=True)
         if status != "nova":
             raise HTTPException(status_code=409, detail="A ocorrência precisa estar em Nova")
@@ -246,10 +284,19 @@ def confirmar_acao(id: int, decisao: DecisaoAcao):
 
 
 # H10
+
 @app.patch("/ocorrencias/{id}/prioridade")
-def alterar_prioridade(id: int, body: PrioridadeBody):
+def alterar_prioridade(
+    id: int,
+    body: PrioridadeBody,
+    sindico=Depends(sindico_autenticado),
+):
     with closing(conectar()) as conn, conn, conn.cursor() as cursor:
-        cursor.execute("SELECT prioridade FROM ocorrencias WHERE id = %s FOR UPDATE", (id,))
+        verificar_acesso_ocorrencia(cursor, id, sindico["id"])
+        cursor.execute(
+            "SELECT prioridade FROM ocorrencias WHERE id = %s FOR UPDATE",
+            (id,),
+        )
         ocorrencia = cursor.fetchone()
         if ocorrencia is None:
             raise HTTPException(status_code=404, detail="ocorrência não encontrada")
