@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from .registrar_decisao import registrar_decisao
 
 def listar_para_aprovacao(conn, sindico_id):
@@ -22,11 +23,11 @@ def listar_para_aprovacao(conn, sindico_id):
 def aprovar_lote(conn, ids, sindico_id):
     """H15: aprova o lote todo-ou-nada + registra no histórico."""
     if not ids:
-        return {"ok": False, "erros": {"ids": "Informe pelo menos 1 ocorrência"}}
+        raise HTTPException(status_code=422, detail="Informe pelo menos 1 ocorrência")
     try:
         ids_int = [int(i) for i in ids]
     except (ValueError, TypeError):
-        return {"ok": False, "erros": {"ids": "Ids devem ser inteiros"}}
+        raise HTTPException(status_code=422, detail="Ids devem ser inteiros")
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -38,38 +39,46 @@ def aprovar_lote(conn, ids, sindico_id):
                   AND c.sindico_id = %s
                   AND o.status = 'nova'
                   AND o.travada = FALSE
+                  AND o.prioridade <> 'urgente'
                 RETURNING o.id
             """, (ids_int, sindico_id))
             aprovados = [r[0] for r in cur.fetchall()]
             if len(aprovados) != len(ids_int):
                 conn.rollback()
-                return {"ok": False, "erros": {"ids": "Algum id não é seu, já foi aprovado ou está travado"}}
+                raise HTTPException(
+                    status_code=409,
+                    detail="Algum id não é seu, já foi aprovado, está travado ou é urgente",
+                )
             for oid in aprovados:
                 resultado = registrar_decisao(
                     {
+                        "tipo": "aprovacao_lote",
                         "ocorrenciaId": oid,
-                        "acao": "aprovacao_lote",
-                        "nota": f"aprovado em lote por {sindico_id} — status nova -> em_andamento",
+                        "quemDecidiu": "sindico",
+                        "prioridadeFinal": "normal",
+                        "responsavel": "sindico",
                     },
                     conexao=conn,
                 )
                 if not resultado.get("ok"):
                     conn.rollback()
-                    return {"ok": False, "erros": resultado.get("erros", {})}
+                    raise HTTPException(status_code=409, detail="Falha ao registrar decisão do lote")
         conn.commit()
-        return {"ok": True, "aprovados": aprovados, "quantidade": len(aprovados)}
-    except Exception as e:
+        return {"ok": True, "aprovadas": len(aprovados), "aprovados": aprovados, "quantidade": len(aprovados)}
+    except HTTPException:
+        raise
+    except Exception:
         conn.rollback()
-        return {"ok": False, "erros": {"ids": str(e)}}
+        raise HTTPException(status_code=500, detail="Falha ao aprovar lote")
 
 def desfazer_lote(conn, ids, sindico_id):
     """H15 undo: volta em_andamento -> nova + registra desfazer."""
     if not ids:
-        return {"ok": False, "erros": {"ids": "Informe pelo menos 1 ocorrência"}}
+        raise HTTPException(status_code=422, detail="Informe pelo menos 1 ocorrência")
     try:
         ids_int = [int(i) for i in ids]
     except (ValueError, TypeError):
-        return {"ok": False, "erros": {"ids": "Ids devem ser inteiros"}}
+        raise HTTPException(status_code=422, detail="Ids devem ser inteiros")
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -85,21 +94,25 @@ def desfazer_lote(conn, ids, sindico_id):
             desfeitos = [r[0] for r in cur.fetchall()]
             if len(desfeitos) != len(ids_int):
                 conn.rollback()
-                return {"ok": False, "erros": {"ids": "Algum id não pode ser desfeito"}}
+                raise HTTPException(status_code=409, detail="Algum id não pode ser desfeito")
             for oid in desfeitos:
                 resultado = registrar_decisao(
                     {
+                        "tipo": "desfazer_aprovacao_lote",
                         "ocorrenciaId": oid,
-                        "acao": "desfazer_aprovacao_lote",
-                        "nota": f"desfeito por {sindico_id} — status em_andamento -> nova",
+                        "quemDecidiu": "sindico",
+                        "prioridadeFinal": "normal",
+                        "responsavel": "sindico",
                     },
                     conexao=conn,
                 )
                 if not resultado.get("ok"):
                     conn.rollback()
-                    return {"ok": False, "erros": resultado.get("erros", {})}
+                    raise HTTPException(status_code=409, detail=f"Falha desfazer {oid}: {resultado.get('erros')}")
         conn.commit()
         return {"ok": True, "desfeitos": desfeitos}
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         conn.rollback()
-        return {"ok": False, "erros": {"ids": str(e)}}
+        raise HTTPException(status_code=500, detail="Falha ao desfazer lote")

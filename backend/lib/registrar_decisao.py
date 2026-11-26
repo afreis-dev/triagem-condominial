@@ -1,126 +1,139 @@
+import re
+from datetime import date
+
 from .conexao import conectar
-from .dominio import texto
+from .dominio import ORIGENS, PRIORIDADES, RESPONSAVEIS, inteiro, texto
 
-TIPOS_VALIDOS = {
-    "entrada",
-    "acao",
-    "conclusao",
-    "prioridade_alterada",
-    "aprovacao_lote",
-    "desfazer_aprovacao_lote",
-    "delegar",
-    "agendar",
-    "eu_mesmo",
-}
+TIPOS = ("entrada", "prioridade_confirmada", "prioridade_alterada", "acao", "conclusao", "aprovacao_lote", "desfazer_aprovacao_lote")
+QUEM_DECIDIU = ("sistema", "sindico")
+ACOES = ("delegar", "agendar", "eu_mesmo")
+CAMPOS = (
+    "ocorrencia_id", "tipo", "quem_decidiu", "origem", "prioridade_sugerida", "prioridade_final",
+    "motivo", "acao", "responsavel", "data_agendada", "nota", "rebaixou_travada",
+)
 
-def _p(dados, *chaves):
-    for k in chaves:
-        v = texto(dados.get(k))
-        if v is not None:
-            return v
-    return None
+INSERIR = """
+    INSERT INTO registros_decisao
+        (ocorrencia_id, tipo, quem_decidiu, origem, prioridade_sugerida, prioridade_final,
+         motivo, acao, responsavel, data_agendada, nota, rebaixou_travada)
+    VALUES
+        (%(ocorrencia_id)s, %(tipo)s, %(quem_decidiu)s, %(origem)s, %(prioridade_sugerida)s,
+         %(prioridade_final)s, %(motivo)s, %(acao)s, %(responsavel)s, %(data_agendada)s,
+         %(nota)s, %(rebaixou_travada)s)
+    RETURNING id, data_hora
+"""
 
-def _validar_ocorrencia_id(valor_bruto):
-    """Valida sem tocar no banco. Retorna (id_int ou None, erro ou None)."""
-    # bool é int no Python — tem que rejeitar True/False
-    if isinstance(valor_bruto, bool):
-        return None, "Ocorrência não encontrada"
-    if isinstance(valor_bruto, int):
-        if 1 <= valor_bruto <= 2147483647:
-            return valor_bruto, None
-        return None, "Ocorrência não encontrada"
-    if isinstance(valor_bruto, str):
-        s = valor_bruto.strip()
-        # "abc" -> erro, "9"*5000 -> erro (longo demais, nem tenta o banco)
-        if s.isdigit() and 1 <= len(s) <= 9:
-            n = int(s)
-            if 1 <= n <= 2147483647:
-                return n, None
-    return None, "Ocorrência não encontrada"
+
+def _data(valor):
+    """Converte AAAA-MM-DD em date, ou devolve None se a data for inválida."""
+    if isinstance(valor, date):
+        return valor
+    valor = texto(valor)
+    if valor is None or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", valor):
+        return None
+    try:
+        return date.fromisoformat(valor)
+    except ValueError:
+        return None
+
+
+def _prioridade(dados, chave, erros, obrigatoria=True):
+    """Lê uma prioridade do registro e anota o erro se ela estiver vazia ou fora da lista."""
+    valor = texto(dados.get(chave))
+    if valor is None and not obrigatoria:
+        return None
+    if valor not in PRIORIDADES:
+        erros[chave] = "Prioridade inválida"
+        return None
+    return valor
+
+
+def _validar_acao(dados, erros, valores):
+    """Valida os campos do registro de ação: delegar, agendar ou eu mesmo cuido."""
+    acao = texto(dados.get("acao"))
+    valores["acao"] = acao
+    valores["nota"] = texto(dados.get("nota"))
+    if acao not in ACOES:
+        erros["acao"] = "Escolha a ação"
+    elif acao == "delegar":
+        valores["responsavel"] = texto(dados.get("responsavel"))
+        if valores["responsavel"] not in RESPONSAVEIS:
+            erros["responsavel"] = "Escolha o responsável"
+    elif acao == "agendar":
+        valores["data_agendada"] = _data(dados.get("dataAgendada"))
+        if valores["data_agendada"] is None:
+            erros["dataAgendada"] = "Escolha a data do agendamento"
+    else:
+        valores["responsavel"] = "sindico"
+
 
 def _validar(dados):
+    """Confere os campos do registro e devolve (erros, valores prontos para gravar)."""
     erros = {}
-
-    # --- tipo: chave tem que ser "tipo", não "acao", pro teste passar ---
-    tipo = _p(dados, "tipo", "acao")
-    if tipo is None:
-        erros["tipo"] = "Informe o tipo de registro"
-    elif tipo not in TIPOS_VALIDOS:
-        erros["tipo"] = "Tipo de registro inválido"
-
-    # --- ocorrenciaId: valida sem banco ---
-    ocorrencia_id, erro_id = _validar_ocorrencia_id(dados.get("ocorrenciaId", dados.get("ocorrencia_id")))
-    if erro_id:
-        erros["ocorrenciaId"] = erro_id
-
-    # --- quemDecidiu: obrigatório ---
-    quem = _p(dados, "quemDecidiu", "quem_decidiu")
-    if quem is None:
+    valores = dict.fromkeys(CAMPOS)
+    valores["rebaixou_travada"] = False
+    valores["ocorrencia_id"] = inteiro(dados.get("ocorrenciaId"))
+    if valores["ocorrencia_id"] is None:
+        erros["ocorrenciaId"] = "Ocorrência não encontrada"
+    valores["quem_decidiu"] = texto(dados.get("quemDecidiu"))
+    if valores["quem_decidiu"] not in QUEM_DECIDIU:
         erros["quemDecidiu"] = "Informe quem decidiu"
 
-    nota = _p(dados, "nota")
-    if nota is None:
-        partes = []
-        if quem:
-            partes.append(f"por {quem}")
-        if _p(dados, "origem"):
-            partes.append(f"origem: {_p(dados, 'origem')}")
-        if _p(dados, "prioridadeSugerida", "prioridade_sugerida"):
-            partes.append(f"prioridade sugerida: {_p(dados, 'prioridadeSugerida', 'prioridade_sugerida')}")
-        if _p(dados, "prioridadeFinal", "prioridade_final"):
-            partes.append(f"prioridade final: {_p(dados, 'prioridadeFinal', 'prioridade_final')}")
-        if _p(dados, "motivo"):
-            partes.append(f"motivo: {_p(dados, 'motivo')}")
-        if _p(dados, "responsavel"):
-            partes.append(f"responsável: {_p(dados, 'responsavel')}")
-        nota = " ".join(partes) or tipo or "Registro"
-        nota = nota.strip() or "Registro"
+    tipo = texto(dados.get("tipo"))
+    if tipo is None:
+        erros["tipo"] = "Informe o tipo de registro"
+    elif tipo not in TIPOS:
+        erros["tipo"] = "Tipo de registro inválido"
+    if "tipo" in erros:
+        return erros, None
+    valores["tipo"] = tipo
 
-    valores = {
-        "ocorrencia_id": ocorrencia_id,
-        "tipo": tipo,
-        "quem_decidiu": quem,
-        "origem": _p(dados, "origem"),
-        "prioridade_sugerida": _p(dados, "prioridadeSugerida", "prioridade_sugerida"),
-        "prioridade_final": _p(dados, "prioridadeFinal", "prioridade_final"),
-        "motivo": _p(dados, "motivo"),
-        "acao": tipo,  # espelha tipo em acao pro histórico
-        "responsavel": _p(dados, "responsavel"),
-        "data_agendada": dados.get("dataAgendada") or dados.get("data_agendada"),
-        "nota": nota,
-        "rebaixou_travada": dados.get("rebaixouTravada", dados.get("rebaixou_travada", False)),
-    }
+    if tipo == "entrada":
+        valores["origem"] = texto(dados.get("origem"))
+        if valores["origem"] not in ORIGENS:
+            erros["origem"] = "Origem inválida"
+        valores["prioridade_sugerida"] = _prioridade(dados, "prioridadeSugerida", erros, obrigatoria=False)
+    elif tipo in ("prioridade_confirmada", "prioridade_alterada"):
+        valores["prioridade_sugerida"] = _prioridade(dados, "prioridadeSugerida", erros)
+        valores["prioridade_final"] = _prioridade(dados, "prioridadeFinal", erros)
+        if tipo == "prioridade_alterada":
+            valores["motivo"] = texto(dados.get("motivo"))
+            if valores["motivo"] is None:
+                erros["motivo"] = "Informe o motivo da mudança"
+    elif tipo == "acao":
+        _validar_acao(dados, erros, valores)
+    elif tipo == "acao":
+        _validar_acao(dados, erros, valores)
+    elif tipo in ("aprovacao_lote", "desfazer_aprovacao_lote"):
+        valores["prioridade_final"] = _prioridade(dados, "prioridadeFinal", erros)
+        valores["responsavel"] = texto(dados.get("responsavel"))
+        if valores["responsavel"] not in RESPONSAVEIS:
+            erros["responsavel"] = "Escolha o responsável"
     return erros, valores
 
 def _gravar(conexao, erros, valores):
+    """Confere a ocorrência no banco e insere o registro."""
     with conexao.cursor() as cur:
-        cur.execute("SELECT 1 FROM ocorrencias WHERE id = %s", (valores["ocorrencia_id"],))
-        if cur.fetchone() is None:
+        cur.execute("SELECT travada FROM ocorrencias WHERE id = %s FOR SHARE", (valores["ocorrencia_id"],))
+        ocorrencia = cur.fetchone()
+        if ocorrencia is None:
             erros["ocorrenciaId"] = "Ocorrência não encontrada"
         if erros:
             return {"ok": False, "erros": erros}
-        cur.execute(
-            """
-            INSERT INTO registros_decisao
-                (ocorrencia_id, tipo, quem_decidiu, origem,
-                 prioridade_sugerida, prioridade_final, motivo,
-                 acao, responsavel, data_agendada, nota, rebaixou_travada)
-            VALUES
-                (%(ocorrencia_id)s, %(tipo)s, %(quem_decidiu)s, %(origem)s,
-                 %(prioridade_sugerida)s, %(prioridade_final)s, %(motivo)s,
-                 %(acao)s, %(responsavel)s, %(data_agendada)s, %(nota)s, %(rebaixou_travada)s)
-            RETURNING id, data_hora
-            """,
-            valores,
+        valores["rebaixou_travada"] = (
+            valores["tipo"] == "prioridade_alterada"
+            and bool(ocorrencia[0])
+            and valores["prioridade_final"] != "urgente"
         )
+        cur.execute(INSERIR, valores)
         registro_id, data_hora = cur.fetchone()
-    return {"ok": True, "registroId": registro_id, "dataHora": data_hora.isoformat() if data_hora else None}
+    return {"ok": True, "registroId": registro_id, "dataHora": data_hora.isoformat()}
+
 
 def registrar_decisao(dados, conexao=None):
-    """Valida e grava um registro no histórico. Só insere, nunca altera nem apaga."""
+    """Valida e grava um registro no histórico da ocorrência. Só insere, nunca altera nem apaga."""
     erros, valores = _validar(dados if isinstance(dados, dict) else {})
-    # Se tem erro de validação, volta SEM conectar no banco
-    if erros:
+    if valores is None or valores["ocorrencia_id"] is None:
         return {"ok": False, "erros": erros}
     proprio = conexao is None
     if proprio:
@@ -138,7 +151,9 @@ def registrar_decisao(dados, conexao=None):
         if proprio:
             conexao.close()
 
+
 def buscar_decisoes(ocorrencia_id: int, conn):
+    """Consulta os registros de decisão em ordem cronológica."""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -153,6 +168,7 @@ def buscar_decisoes(ocorrencia_id: int, conn):
             (ocorrencia_id,),
         )
         linhas = cur.fetchall()
+
     return [
         {
             "id": linha[0],
@@ -168,7 +184,7 @@ def buscar_decisoes(ocorrencia_id: int, conn):
             "dataAgendada": linha[10].isoformat() if linha[10] else None,
             "nota": linha[11],
             "rebaixouTravada": linha[12],
-            "dataHora": linha[13].isoformat() if linha[13] else None,
+            "dataHora": linha[13].isoformat(),
         }
         for linha in linhas
     ]
