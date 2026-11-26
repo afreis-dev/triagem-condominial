@@ -62,9 +62,8 @@ describe("mapearRegistro", () => {
     expect(evento.acao).toBe("Prioridade alterada");
     expect(evento.motivo).toContain("Urgente → Normal");
     expect(evento.motivo).toContain("Risco descartado");
-    expect(evento.motivo).toContain(
-      "Prioridade travada rebaixada",
-    );
+    expect(evento.rebaixouTravada).toBe(true);
+    expect(evento.motivo).not.toContain("Prioridade travada rebaixada");
   });
 
   it("exibe delegação, responsável e nota", () => {
