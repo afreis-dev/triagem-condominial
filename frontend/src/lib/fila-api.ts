@@ -21,6 +21,13 @@ type CartaoFila = {
   origem: "morador" | "proprietario" | "funcionario" | "whatsapp_sindico";
   status: "nova" | "em_andamento" | "concluida";
   prioridade: Prioridade | null;
+  prioridadeSugerida?: Prioridade | null;
+  travada?: boolean;
+  palavraDeRisco?: string | null;
+  nome?: string | null;
+  apartamento?: string | null;
+  celular?: string | null;
+  local?: string | null;
   motivo: string | null;
   criadaEm: string;
   concluidaEm?: string | null;
@@ -40,7 +47,19 @@ function mapearCartao(cartao: CartaoFila): Ocorrencia {
     origem,
     status: cartao.status === "em_andamento" ? "andamento" : cartao.status,
     prioridade,
-    prioridadeSugerida: prioridade,
+    prioridadeSugerida: cartao.prioridadeSugerida ?? prioridade,
+    travada: cartao.travada ?? false,
+    palavraDeRisco: cartao.palavraDeRisco ?? null,
+    ...(cartao.local ? { local: cartao.local } : {}),
+    ...(cartao.nome || cartao.apartamento || cartao.celular ? {
+      relator: {
+        nome: cartao.nome ?? "Nome não informado",
+        perfil: cartao.origem === "funcionario" ? "Funcionário"
+          : cartao.origem === "proprietario" ? "Proprietário" : "Morador",
+        apartamento: cartao.apartamento ?? undefined,
+        celular: cartao.celular ?? "",
+      },
+    } : {}),
     criadaEm: cartao.criadaEm,
     ...(cartao.concluidaEm ? { concluidaEm: cartao.concluidaEm } : {}),
     ...(cartao.marcaAcao ? { marcaAcao: cartao.marcaAcao } : {}),
@@ -48,6 +67,54 @@ function mapearCartao(cartao: CartaoFila): Ocorrencia {
     motivo: cartao.motivo ?? "Não classificada, revisar",
     historico: [{ quando: cartao.criadaEm, autor: "Sistema", acao: `Recebida via ${origem}` }],
   };
+}
+
+export function useOcorrenciaApi(id: string, enabled: boolean) {
+  const token = obterToken();
+  return useQuery({
+    queryKey: ["ocorrencia", id, token],
+    enabled,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      if (!token) throw new Error("Entre novamente para consultar a ocorrência.");
+      const resposta = await fetch(`${URL}/${encodeURIComponent(id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+        signal,
+      });
+      if (resposta.status === 404) return null;
+      if (!resposta.ok) throw new Error("Não foi possível consultar a ocorrência.");
+      return mapearCartao(await resposta.json());
+    },
+  });
+}
+
+export function usePrioridadeApi(id: string) {
+  const queryClient = useQueryClient();
+  const token = obterToken();
+  return useMutation({
+    mutationFn: async ({ prioridade, motivo }: { prioridade: Prioridade; motivo?: string }) => {
+      if (!token) throw new Error("Entre novamente para confirmar a prioridade.");
+      const resposta = await fetch(`${URL}/${encodeURIComponent(id)}/prioridade`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ prioridade, motivo }),
+      });
+      if (!resposta.ok) {
+        const dados = await resposta.json().catch(() => null);
+        const detalhe = dados?.detail;
+        throw new Error(typeof detalhe === "string" ? detalhe
+          : detalhe?.motivo ?? "Não foi possível confirmar a prioridade.");
+      }
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["ocorrencia", id, token] }),
+        queryClient.invalidateQueries({ queryKey: chaveFila() }),
+        queryClient.invalidateQueries({ queryKey: ["historico", Number(id), token] }),
+      ]);
+    },
+  });
 }
 
 export function useFilaApi(habilitada = true) {

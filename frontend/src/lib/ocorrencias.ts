@@ -34,6 +34,7 @@ export interface EventoHistorico {
   autor: string;
   acao: string;
   motivo?: string | undefined;
+  rebaixouTravada?: boolean;
 }
 
 export interface Ocorrencia {
@@ -46,6 +47,9 @@ export interface Ocorrencia {
   prioridade: Prioridade;
   /** Priority the system suggested when the occurrence arrived. */
   prioridadeSugerida: Prioridade;
+  travada?: boolean;
+  palavraDeRisco?: string | null;
+  local?: string;
   status: Status;
   criadaEm?: string;
   concluidaEm?: string;
@@ -130,8 +134,15 @@ export function protocoloDe(id: number): string {
   return `PROT-${String((id * 104729 + 318201) % 1_000_000).padStart(6, "0")}`;
 }
 
+const LOCAIS_DEMO: Readonly<Record<number, string>> = {
+  1: "Hall do Bloco B",
+  2: "Elevador social",
+  5: "Escada de serviço entre o 3º e o 4º andar",
+};
+
 function semear(b: OcorrenciaBase): Ocorrencia {
   const d = DETALHES[b.id]!;
+  const local = LOCAIS_DEMO[b.id];
   const criada = AGORA_MOCK - b.minutosAtras * 60_000;
   const historico: EventoHistorico[] = [
     { quando: new Date(criada).toISOString(), autor: "Sistema", acao: `Recebida via ${b.origem}` },
@@ -154,14 +165,15 @@ function semear(b: OcorrenciaBase): Ocorrencia {
     ...b,
     protocolo: protocoloDe(b.id),
     prioridadeSugerida: b.prioridade,
+    criadaEm: new Date(criada).toISOString(),
+    ...(local ? { local } : {}),
+    travada: b.prioridade === "urgente" && Boolean(palavraDeRisco({ ...b, descricao: d.descricao })),
     descricao: d.descricao,
     relator: d.relator,
     decisao: d.decisao,
     historico,
   };
 }
-
-export const OCORRENCIAS: Ocorrencia[] = BASE.map(semear);
 
 export function nomeCondominio(id: string): string {
   return CONDOMINIOS.find((c) => c.id === id)?.nome ?? "Condomínio";
@@ -259,6 +271,7 @@ export function criarDeMensagem(
     prioridade,
     prioridadeSugerida: prioridade,
     status: "nova",
+    criadaEm: quando,
     minutosAtras: 0,
     motivo,
     descricao: limpo.join("\n") || texto,
@@ -299,21 +312,22 @@ export function palavraDeRisco(o: Pick<Ocorrencia, "titulo" | "motivo" | "descri
   return null;
 }
 
-export function ehRebaixamento(atual: Prioridade, nova: Prioridade): boolean {
-  return ORDEM[nova] > ORDEM[atual];
+export const OCORRENCIAS: Ocorrencia[] = BASE.map(semear);
+
+export function alertaDeRisco(o: Ocorrencia, nova: Prioridade): string | null {
+  if (!o.travada || nova === "urgente") return null;
+  const palavra = o.palavraDeRisco ?? palavraDeRisco(o) ?? "não informada";
+  return `Esta ocorrência tem palavra de risco: ${palavra}. Explique por que não é urgente.`;
 }
 
-/** Warning shown when lowering the priority of an occurrence that has a risk keyword. */
-export function alertaDeRisco(o: Ocorrencia, nova: Prioridade): string | null {
-  const palavra = palavraDeRisco(o);
-  if (!palavra || !ehRebaixamento(o.prioridade, nova)) return null;
-  return `Esta ocorrência tem palavra de risco: ${palavra}. Explique por que não é urgente`;
+export function exigeMotivoPrioridade(o: Ocorrencia, nova: Prioridade): boolean {
+  return nova !== o.prioridadeSugerida || Boolean(o.travada && nova !== "urgente");
 }
 
 /** Reasons shown in "Por que está aqui". */
 export function porQueEstaAqui(o: Ocorrencia): string[] {
   const itens = [`Classificada como ${labelPrioridade(o.prioridadeSugerida)} pelo sistema`];
-  const palavra = palavraDeRisco(o);
+  const palavra = o.palavraDeRisco ?? (o.travada ? palavraDeRisco(o) : null);
   if (palavra) itens.push(`Palavra de risco encontrada: "${palavra}"`);
   itens.push(o.motivo);
   return itens;
@@ -330,7 +344,7 @@ export function aplicarMudancaPrioridade(
   quando: string,
   autor = AUTOR_ATUAL,
 ): Ocorrencia {
-  if (nova === o.prioridade) return o;
+  const alterada = exigeMotivoPrioridade(o, nova);
   return {
     ...o,
     prioridade: nova,
@@ -339,8 +353,11 @@ export function aplicarMudancaPrioridade(
       {
         quando,
         autor,
-        acao: `Prioridade alterada: ${labelPrioridade(o.prioridade)} → ${labelPrioridade(nova)}`,
-        motivo: motivo.trim(),
+        acao: alterada
+          ? `Prioridade alterada: ${labelPrioridade(o.prioridadeSugerida)} → ${labelPrioridade(nova)}`
+          : `Prioridade confirmada: ${labelPrioridade(nova)}`,
+        motivo: alterada ? motivo.trim() : undefined,
+        rebaixouTravada: alterada && Boolean(o.travada) && nova !== "urgente",
       },
     ],
   };

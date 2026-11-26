@@ -17,7 +17,7 @@ import { PrioridadeSecao } from "@/components/ocorrencia/PrioridadeSecao";
 import { Secao } from "@/components/ocorrencia/Secao";
 import { PriorityBadge } from "@/components/fila/PriorityBadge";
 import { Button } from "@/components/ui/button";
-import { chaveFila, useConclusaoApi, useFilaApi } from "@/lib/fila-api";
+import { chaveFila, useConclusaoApi, useOcorrenciaApi } from "@/lib/fila-api";
 import {
   STATUS,
   concluirOcorrencia,
@@ -58,16 +58,14 @@ function OcorrenciaPage() {
   const { id } = Route.useParams();
   const navigate = Route.useNavigate();
   const demonstracao = id.startsWith("demo-");
-  const fila = useFilaApi(!demonstracao);
+  const detalhe = useOcorrenciaApi(id, !demonstracao);
   const ocorrenciasDemo = useOcorrencias();
   const conclusao = useConclusaoApi();
   const queryClient = useQueryClient();
-  const o = (demonstracao ? ocorrenciasDemo : fila.data)?.find(
-    (x) => (demonstracao ? `demo-${x.id}` : String(x.id)) === id,
-  );
+  const o = demonstracao ? ocorrenciasDemo.find((x) => `demo-${x.id}` === id) : detalhe.data;
   const historico = useHistoricoApi(Number(id), !demonstracao && Boolean(o));
 
-  if (!demonstracao && fila.isPending) {
+  if (!demonstracao && detalhe.isPending) {
     return <p role="status" className="py-10 text-center">Carregando ocorrência…</p>;
   }
 
@@ -75,7 +73,7 @@ function OcorrenciaPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-10 text-center">
         <p className="text-muted-foreground">
-          {!demonstracao && fila.isError
+          {!demonstracao && detalhe.isError
             ? "Não foi possível consultar a ocorrência."
             : "Ocorrência não encontrada."}
         </p>
@@ -179,6 +177,20 @@ function OcorrenciaPage() {
                 <span className="font-semibold">{o.origem}</span>
               </p>
             </div>
+            <p className="text-sm">
+              <span className="text-muted-foreground">Onde fica: </span>
+              {o.local ?? "Não informado"}
+            </p>
+            {o.criadaEm && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Hora de entrada: </span>
+                <time dateTime={o.criadaEm}>
+                  {new Intl.DateTimeFormat("pt-BR", {
+                    dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo",
+                  }).format(new Date(o.criadaEm))}
+                </time>
+              </p>
+            )}
           </div>
           {relator?.celular ? (
             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2">
@@ -195,7 +207,7 @@ function OcorrenciaPage() {
           )}
         </Secao>
 
-        {demonstracao && <PrioridadeSecao key={`p-${o.prioridade}`} ocorrencia={o} />}
+        <PrioridadeSecao key={id} ocorrencia={o} demonstracao={demonstracao} />
 
         {demonstracao && o.status !== "concluida" && <DecisaoSecao ocorrencia={o} />}
         {!demonstracao && o.status === "nova" && (

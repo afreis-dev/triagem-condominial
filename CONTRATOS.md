@@ -312,6 +312,22 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
 
 Se o banco não responder, devolve status 503 com `{ "ok": false, "erros": { "banco": "Não foi possível buscar a fila agora. Tente de novo." } }`, sem detalhes do erro.
 
+## Detalhe e prioridade da ocorrência (H10)
+
+`GET /ocorrencias/{id}` retorna o detalhe com protocolo, condomínio, descrição,
+origem, status, dados do relator, local, data de entrada, prioridade atual,
+prioridade sugerida, motivo da classificação, trava e palavra de risco.
+
+`PATCH /ocorrencias/{id}/prioridade` recebe `prioridade` e `motivo` opcional
+(até 500 caracteres). Registra `prioridade_confirmada` quando a escolha
+confirma a sugestão. Uma escolha diferente ou abaixo de Urgente em ocorrência
+travada exige motivo e registra `prioridade_alterada`. O registro e a
+prioridade atual são persistidos na mesma transação.
+
+As duas rotas exigem `Authorization: Bearer <token>`. Devolvem 401 se a sessão
+for inválida ou ausente e 404 se o ID não estiver na carteira do síndico.
+O PATCH devolve 409 para ocorrência concluída e 422 para dados inválidos.
+
 ## buscarDecisoes(ocorrenciaId)
 
 Python: `backend/lib/registrar_decisao.py` → `buscar_decisoes(ocorrencia_id, conn)`.
@@ -330,6 +346,8 @@ para uma determinada ocorrência, sem alterar ou excluir dados.
 
 - GET /api/ocorrencias/{id}/decisoes
 - GET /ocorrencias/{id}/decisoes
+
+As duas rotas exigem token Bearer e acesso à ocorrência na carteira do síndico.
 
 ### Saída
 
