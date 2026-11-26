@@ -4,7 +4,7 @@ from datetime import date
 from .conexao import conectar
 from .dominio import ORIGENS, PRIORIDADES, RESPONSAVEIS, inteiro, texto
 
-TIPOS = ("entrada", "prioridade_confirmada", "prioridade_alterada", "acao", "conclusao", "aprovacao_lote")
+TIPOS = ("entrada", "prioridade_confirmada", "prioridade_alterada", "acao", "conclusao", "aprovacao_lote", "desfazer_aprovacao_lote")
 QUEM_DECIDIU = ("sistema", "sindico")
 ACOES = ("delegar", "agendar", "eu_mesmo")
 CAMPOS = (
@@ -102,13 +102,12 @@ def _validar(dados):
                 erros["motivo"] = "Informe o motivo da mudança"
     elif tipo == "acao":
         _validar_acao(dados, erros, valores)
-    elif tipo == "aprovacao_lote":
+    elif tipo in ("aprovacao_lote", "desfazer_aprovacao_lote"):
         valores["prioridade_final"] = _prioridade(dados, "prioridadeFinal", erros)
         valores["responsavel"] = texto(dados.get("responsavel"))
         if valores["responsavel"] not in RESPONSAVEIS:
             erros["responsavel"] = "Escolha o responsável"
     return erros, valores
-
 
 def _gravar(conexao, erros, valores):
     """Confere a ocorrência no banco e insere o registro."""
@@ -132,7 +131,7 @@ def _gravar(conexao, erros, valores):
 def registrar_decisao(dados, conexao=None):
     """Valida e grava um registro no histórico da ocorrência. Só insere, nunca altera nem apaga."""
     erros, valores = _validar(dados if isinstance(dados, dict) else {})
-    if valores is None or valores["ocorrencia_id"] is None:
+    if valores is None or erros:
         return {"ok": False, "erros": erros}
     proprio = conexao is None
     if proprio:
