@@ -3,7 +3,6 @@ load_dotenv()
 
 from contextlib import closing
 from datetime import date
-from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,15 +16,19 @@ from lib.salvar_ocorrencia import salvar_ocorrencia
 from lib.concluir_ocorrencia import concluir_ocorrencia
 from lib.auth import criar_token, verificar_senha
 from lib.auth_deps import sindico_autenticado
+from lib.aprovar_lote import listar_para_aprovacao, aprovar_lote, desfazer_lote
 from rotas.fila import rota_listar_fila
 
 app = FastAPI(title="Triagem Condominial")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# H15 usa conectar() direto, sem get_conn() inventado
+def get_conn():
+    return conectar()
+
 class DadosLogin(BaseModel):
     email: str
     senha: str
-
 
 @app.post("/auth/login")
 def login(dados: DadosLogin):
@@ -42,27 +45,14 @@ def login(dados: DadosLogin):
             resultado = cursor.fetchone()
 
     if not resultado or not resultado[1]:
-        raise HTTPException(
-            status_code=401,
-            detail="Credenciais inválidas",
-        )
-
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
     if not verificar_senha(dados.senha, resultado[1]):
-        raise HTTPException(
-            status_code=401,
-            detail="Credenciais inválidas",
-        )
-
-    return {
-        "access_token": criar_token(resultado[0]),
-        "token_type": "bearer",
-    }
-
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    return {"access_token": criar_token(resultado[0]), "token_type": "bearer"}
 
 @app.get("/auth/me")
 def consultar_perfil(sindico=Depends(sindico_autenticado)):
     return sindico
-
 
 class ColarBody(BaseModel):
     condominioId: int
@@ -77,12 +67,6 @@ class PrioridadeBody(BaseModel):
     prioridade: str
     motivo: Optional[str] = None
 
-def _validar_uuid(id: str):
-    try:
-        return UUID(id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="id inválido")
-
 # Endpoint - H04
 @app.get("/api/condominios")
 def listar_condominios_da_carteira(sindico=Depends(sindico_autenticado)):
@@ -92,7 +76,6 @@ def listar_condominios_da_carteira(sindico=Depends(sindico_autenticado)):
             (sindico["id"],),
         )
         return [{"id": id_, "nome": nome} for id_, nome in cursor.fetchall()]
-
 
 @app.post("/ocorrencias/colar", status_code=201)
 def colar(body: ColarBody, sindico=Depends(sindico_autenticado)):
@@ -113,7 +96,6 @@ def colar(body: ColarBody, sindico=Depends(sindico_autenticado)):
             )
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=403, detail="Condomínio fora da sua carteira")
-
         resultado = salvar_ocorrencia(dados, conn)
     if not resultado["ok"]:
         raise HTTPException(status_code=422, detail=resultado["erros"])
@@ -125,26 +107,51 @@ def colar(body: ColarBody, sindico=Depends(sindico_autenticado)):
 def listar_ocorrencias(sindico=Depends(sindico_autenticado)):
     return rota_listar_fila(sindico)
 
+# ---------- H15: TODAS antes de /ocorrencias/{id} ----------
+@app.get("/ocorrencias/para-aprovacao")
+def rota_para_aprovacao(sindico=Depends(sindico_autenticado)):
+    conn = get_conn()
+    try:
+        return {"ok": True, "ocorrencias": listar_para_aprovacao(conn, sindico["id"])}
+    finally:
+        conn.close()
 
-# Detalhe
+@app.post("/ocorrencias/aprovar-lote")
+def rota_aprovar_lote(payload: dict, sindico=Depends(sindico_autenticado)):
+    conn = get_conn()
+    try:
+        return aprovar_lote(conn, payload.get("ids", []), sindico["id"])
+    finally:
+        conn.close()
+
+@app.post("/ocorrencias/desfazer-lote")
+def rota_desfazer_lote(payload: dict, sindico=Depends(sindico_autenticado)):
+    conn = get_conn()
+    try:
+        return desfazer_lote(conn, payload.get("ids", []), sindico["id"])
+    finally:
+        conn.close()
+
+# Detalhe - UMA ÚNICA definição, id int, com auth
 @app.get("/ocorrencias/{id}")
-def buscar_ocorrencia(id: str):
-    oid = _validar_uuid(id)
+def buscar_ocorrencia(id: int, sindico=Depends(sindico_autenticado)):
     conn = conectar()
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, condominio_id, descricao, prioridade, categoria,
-                   responsavel, status, criado_em
-            FROM ocorrencias WHERE id = %s
-        """, (str(oid),))
+            SELECT o.id, o.condominio_id, o.descricao, o.prioridade, o.categoria,
+                   o.responsavel, o.status, o.criado_em
+            FROM ocorrencias o
+            JOIN condominios c ON c.id = o.condominio_id
+            WHERE o.id = %s AND c.sindico_id = %s
+        """, (id, sindico["id"]))
         r = cur.fetchone()
         cur.close()
         if not r:
             raise HTTPException(status_code=404, detail="ocorrência não encontrada")
         return {
-            "id": str(r[0]), "condominio_id": str(r[1]),
-            "texto_colado": r[2], "descricao": r[2],
+            "id": r[0], "condominio_id": r[1],
+            "descricao": r[2],
             "prioridade": r[3], "categoria": r[4],
             "responsavel": r[5], "status": r[6],
             "criado_em": r[7].isoformat() if r[7] else None,
@@ -158,19 +165,12 @@ def buscar_ocorrencia(id: str):
 def listar_decisoes(id: int):
     with closing(conectar()) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM ocorrencias WHERE id = %s",
-                (id,),
-            )
+            cur.execute("SELECT id FROM ocorrencias WHERE id = %s", (id,))
             if cur.fetchone() is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Ocorrência não encontrada",
-                )
-
+                raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
         return buscar_decisoes(id, conn)
 
-#Endpoint - H13
+# Endpoint - H13
 @app.patch("/api/ocorrencias/{id}/concluir")
 @app.patch("/ocorrencias/{id}/concluir")
 def concluir(id: int):
@@ -180,13 +180,11 @@ def concluir(id: int):
     codigo = 404 if "ocorrenciaId" in resultado["erros"] else 409
     return JSONResponse(content=resultado, status_code=codigo)
 
-
 class DecisaoAcao(BaseModel):
     acao: Literal["delegar", "agendar", "eu_mesmo"]
     responsavel: str | None = None
     dataAgendada: date | None = None
     nota: str = Field(default="", max_length=500)
-
 
 def _consultar_ocorrencia_acao(cursor, id: int, *, bloquear: bool = False):
     consulta = """
@@ -201,14 +199,12 @@ def _consultar_ocorrencia_acao(cursor, id: int, *, bloquear: bool = False):
         raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
     return ocorrencia
 
-
 def _papeis_delegaveis(cursor, condominio_id):
     cursor.execute(
         "SELECT papel FROM responsaveis WHERE condominio_id = %s ORDER BY papel",
         (condominio_id,),
     )
     return [papel for (papel,) in cursor.fetchall()]
-
 
 @app.get("/ocorrencias/{id}/responsaveis")
 def listar_responsaveis_ocorrencia(id: int):
@@ -220,30 +216,32 @@ def listar_responsaveis_ocorrencia(id: int):
         "responsavelSugerido": sugerido if sugerido in papeis else None,
     }
 
-
 @app.post("/ocorrencias/{id}/acoes", status_code=201)
 def confirmar_acao(id: int, decisao: DecisaoAcao):
     if decisao.acao == "agendar" and decisao.dataAgendada is None:
         raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
-
     with closing(conectar()) as conn, conn, conn.cursor() as cursor:
         condominio_id, _, status = _consultar_ocorrencia_acao(cursor, id, bloquear=True)
         if status != "nova":
             raise HTTPException(status_code=409, detail="A ocorrência precisa estar em Nova")
         if decisao.acao == "delegar" and decisao.responsavel not in _papeis_delegaveis(cursor, condominio_id):
             raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio")
-
+        # H14: registrar_decisao espera acao + nota, não tipo solto
         resultado = registrar_decisao(
-            {"tipo": "acao", "ocorrenciaId": id, "quemDecidiu": "sindico", **decisao.model_dump(mode="json")},
+            {
+                "ocorrenciaId": id,
+                "acao": decisao.acao,
+                "nota": decisao.nota or f"acao {decisao.acao} por sindico",
+                "quemDecidiu": "sindico",
+                **decisao.model_dump(mode="json"),
+            },
             conexao=conn,
         )
         if not resultado["ok"]:
             raise HTTPException(status_code=422, detail=resultado["erros"])
         cursor.execute("UPDATE ocorrencias SET status = 'em_andamento' WHERE id = %s", (id,))
-
     return {"id": id, "status": "em_andamento",
             "marcaAcao": marca_acao(decisao.acao, decisao.responsavel, decisao.dataAgendada)}
-
 
 # H10
 @app.patch("/ocorrencias/{id}/prioridade")
@@ -261,12 +259,13 @@ def alterar_prioridade(id: int, body: PrioridadeBody):
         entrada = cursor.fetchone()
         resultado = registrar_decisao(
             {
-                "tipo": "prioridade_alterada",
                 "ocorrenciaId": id,
+                "acao": "prioridade_alterada",
                 "quemDecidiu": "sindico",
                 "prioridadeSugerida": entrada[0] if entrada and entrada[0] else ocorrencia[0],
                 "prioridadeFinal": body.prioridade,
                 "motivo": body.motivo,
+                "nota": body.motivo or "prioridade alterada",
             },
             conexao=conn,
         )
@@ -275,7 +274,6 @@ def alterar_prioridade(id: int, body: PrioridadeBody):
         cursor.execute("UPDATE ocorrencias SET prioridade = %s WHERE id = %s", (body.prioridade, id))
     return {"id": id, "prioridade": body.prioridade}
 
-
 class OcorrenciaFormBody(BaseModel):
     perfil: Literal["morador", "proprietario", "funcionario"]
     nome: Optional[str] = None
@@ -283,7 +281,6 @@ class OcorrenciaFormBody(BaseModel):
     celular: Optional[str] = None
     local: Optional[str] = None
     descricao: str
-
 
 def _buscar_condominio_por_slug(identificador: str, conexao):
     with conexao.cursor() as cursor:
@@ -296,13 +293,11 @@ def _buscar_condominio_por_slug(identificador: str, conexao):
         raise HTTPException(status_code=404, detail="Condomínio não encontrado")
     return condominio
 
-
 @app.get("/api/condominios/{identificador}")
 def get_condominio_api(identificador: str):
     with closing(conectar()) as conexao:
         condominio_id, nome = _buscar_condominio_por_slug(identificador, conexao)
     return {"id": condominio_id, "nome": nome}
-
 
 @app.post("/api/condominios/{identificador}/ocorrencias", status_code=201)
 def criar_ocorrencia_form(identificador: str, body: OcorrenciaFormBody):
