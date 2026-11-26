@@ -14,10 +14,7 @@ def gerar_hash(senha: str) -> str:
 
 
 def verificar_senha(senha: str, hash_salvo: str) -> bool:
-    try:
-        return password_hash.verify(senha, hash_salvo)
-    except Exception:
-        return False
+    return password_hash.verify(senha, hash_salvo)
 
 
 def criar_token(sindico_id: int) -> str:
