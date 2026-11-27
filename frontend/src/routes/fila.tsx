@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MenuSindico } from "@/components/MenuSindico";
+import { AprovacaoLote } from "@/components/fila/AprovacaoLote";
 import { ColarMensagemDialog } from "@/components/fila/ColarMensagemDialog";
 import { CartaoOcorrencia } from "@/components/fila/CartaoOcorrencia";
 import { EmptyState } from "@/components/fila/EmptyState";
@@ -158,7 +159,8 @@ function FilaPage() {
       </header>
 
       <main className="mx-auto flex max-w-5xl flex-col gap-4 px-4 pt-4 sm:px-6 sm:pt-6">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <AprovacaoLote />
           <Button variant="outline" onClick={() => void fila.refetch()} disabled={fila.isFetching}>
             <RefreshCw className={fila.isFetching ? "animate-spin" : undefined} aria-hidden />
             Atualizar

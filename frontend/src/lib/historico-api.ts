@@ -11,7 +11,8 @@ export type RegistroDecisao = {
     | "prioridade_alterada"
     | "acao"
     | "conclusao"
-    | "aprovacao_lote";
+    | "aprovacao_lote"
+    | "desfazer_aprovacao_lote";
   quemDecidiu: "sistema" | "sindico";
   origem: string | null;
   prioridadeSugerida: Prioridade | null;
@@ -104,6 +105,10 @@ export function mapearRegistro(registro: RegistroDecisao): EventoHistorico {
       acao = "Aprovada em lote";
       if (final) detalhes.push(`Prioridade: ${final}`);
       if (responsavel) detalhes.push(`Responsável: ${responsavel}`);
+      break;
+
+    case "desfazer_aprovacao_lote":
+      acao = "Aprovação em lote desfeita pelo síndico";
       break;
   }
 

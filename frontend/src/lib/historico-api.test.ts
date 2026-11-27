@@ -116,4 +116,9 @@ describe("mapearRegistro", () => {
     expect(evento.motivo).toContain("Normal");
     expect(evento.motivo).toContain("Portaria");
   });
+
+  it("exibe a aprovação em lote desfeita no histórico", () => {
+    const evento = mapearRegistro({ ...base, tipo: "desfazer_aprovacao_lote" });
+    expect(evento.acao).toBe("Aprovação em lote desfeita pelo síndico");
+  });
 });
