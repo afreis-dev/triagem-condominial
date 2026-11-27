@@ -221,16 +221,66 @@ def rota_desfazer_lote(payload: dict, sindico=Depends(sindico_com_csrf)):
     finally:
         conn.close()
 
+def _contato_responsavel(cursor, condominio_id, papel):
+    if papel in ("zelador", "portaria"):
+        cursor.execute(
+            "SELECT nome, celular FROM responsaveis WHERE condominio_id = %s AND papel = %s",
+            (condominio_id, papel),
+        )
+        linha = cursor.fetchone()
+        nome, celular = linha if linha else (papel, None)
+    elif papel == "sindico":
+        cursor.execute(
+            """
+            SELECT s.nome, s.celular FROM sindicos s
+            JOIN condominios c ON c.sindico_id = s.id
+            WHERE c.id = %s
+            """,
+            (condominio_id,),
+        )
+        linha = cursor.fetchone()
+        nome, celular = linha if linha else (papel, None)
+    else:
+        nome, celular = papel, None
+
+    celular_limpo = (celular or "").strip() or None
+    contato = {
+        "papel": papel,
+        "nome": nome,
+        "celular": celular_limpo,
+        "temCelular": celular_limpo is not None,
+    }
+    if not celular_limpo:
+        contato["aviso"] = "Responsável sem celular cadastrado"
+    return contato
+
+
 # Detalhe
 @app.get("/ocorrencias/{id}")
 def buscar_ocorrencia(id: int, sindico=Depends(sindico_autenticado)):
     with closing(conectar()) as conn, conn.cursor() as cursor:
         ocorrencia = _ocorrencia_da_carteira(cursor, id, sindico["id"])
+        contato = None
+        if ocorrencia["status"] == "em_andamento":
+            cursor.execute(
+                """
+                SELECT acao, responsavel
+                FROM registros_decisao
+                WHERE ocorrencia_id = %s AND tipo = 'acao'
+                ORDER BY data_hora DESC, id DESC
+                LIMIT 1
+                """,
+                (id,),
+            )
+            decisao = cursor.fetchone()
+            if decisao and decisao[0] == "delegar" and decisao[1]:
+                contato = _contato_responsavel(cursor, ocorrencia["condominioId"], decisao[1])
     for campo in ("criadaEm", "concluidaEm"):
         if ocorrencia[campo] is not None:
             ocorrencia[campo] = ocorrencia[campo].astimezone(timezone.utc).isoformat()
     return {
         **ocorrencia,
+        "contatoResponsavel": contato,
         "condominio_id": ocorrencia["condominioId"],
         "texto_colado": ocorrencia["descricao"],
         "criado_em": ocorrencia["criadaEm"],
@@ -333,40 +383,11 @@ def confirmar_acao(
                 raise HTTPException(status_code=422, detail=resultado["erros"])
             cursor.execute("UPDATE ocorrencias SET status = 'em_andamento' WHERE id = %s", (id,))
 
-            # H12: dentro do mesmo cursor, ainda aberto
-            contato = None
-            if decisao.acao == "delegar" and decisao.responsavel:
-                papel = decisao.responsavel
-                if papel in ("zelador", "portaria"):
-                    cursor.execute(
-                        "SELECT nome, celular FROM responsaveis WHERE condominio_id = %s AND papel = %s",
-                        (condominio_id, papel),
-                    )
-                    linha = cursor.fetchone()
-                    nome, celular = linha if linha else (papel, None)
-                elif papel == "sindico":
-                    cursor.execute(
-                        """
-                        SELECT s.nome, s.celular FROM sindicos s
-                        JOIN condominios c ON c.sindico_id = s.id
-                        WHERE c.id = %s
-                        """,
-                        (condominio_id,),
-                    )
-                    linha = cursor.fetchone()
-                    nome, celular = linha if linha else (papel, None)
-                else:
-                    nome, celular = papel, None
-
-                celular_limpo = (celular or "").strip() or None
-                contato = {
-                    "papel": papel,
-                    "nome": nome,
-                    "celular": celular_limpo,
-                    "temCelular": celular_limpo is not None,
-                }
-                if not celular_limpo:
-                    contato["aviso"] = "Responsável sem celular cadastrado"
+            contato = (
+                _contato_responsavel(cursor, condominio_id, decisao.responsavel)
+                if decisao.acao == "delegar" and decisao.responsavel
+                else None
+            )
 
     return {"id": id, "status": "em_andamento",
             "marcaAcao": marca_acao(decisao.acao, decisao.responsavel, decisao.dataAgendada),

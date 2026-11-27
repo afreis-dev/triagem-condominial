@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,6 +20,7 @@ import { Secao } from "@/components/ocorrencia/Secao";
 import { PriorityBadge } from "@/components/fila/PriorityBadge";
 import { Button } from "@/components/ui/button";
 import { chaveFila, useConclusaoApi, useOcorrenciaApi } from "@/lib/fila-api";
+import type { ContatoResponsavel } from "@/lib/h11-api";
 import {
   STATUS,
   concluirOcorrencia,
@@ -31,6 +33,12 @@ import {
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia, useOcorrencias } from "@/lib/ocorrencias-store";
 import { useHistoricoApi } from "@/lib/historico-api";
+
+const PAPEIS_RESPONSAVEL = new Map([
+  ["zelador", "Zelador"],
+  ["portaria", "Portaria"],
+  ["sindico", "Síndico"],
+]);
 
 export const Route = createFileRoute("/ocorrencia/$id")({
   head: ({ params }) => ({
@@ -48,9 +56,10 @@ export const Route = createFileRoute("/ocorrencia/$id")({
 });
 
 function OcorrenciaProtegida() {
+  const { id } = Route.useParams();
   return (
     <AuthGuard>
-      <OcorrenciaPage />
+      <OcorrenciaPage key={id} />
     </AuthGuard>
   );
 }
@@ -63,6 +72,7 @@ function OcorrenciaPage() {
   const ocorrenciasDemo = useOcorrencias();
   const conclusao = useConclusaoApi();
   const queryClient = useQueryClient();
+  const [delegacao, setDelegacao] = useState<{ contato?: ContatoResponsavel | null | undefined }>();
   const o = demonstracao ? ocorrenciasDemo.find((x) => `demo-${x.id}` === id) : detalhe.data;
   const historico = useHistoricoApi(Number(id), !demonstracao && Boolean(o));
 
@@ -70,7 +80,7 @@ function OcorrenciaPage() {
     return <p role="status" className="py-10 text-center">Carregando ocorrência…</p>;
   }
 
-  if (!o) {
+  if (!o || (!demonstracao && detalhe.isError)) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-10 text-center">
         <p className="text-muted-foreground">
@@ -87,6 +97,7 @@ function OcorrenciaPage() {
 
   const status = STATUS.find((s) => s.id === o.status)?.label;
   const relator = o.relator;
+  const contato = detalhe.data?.contatoResponsavel ?? delegacao?.contato;
 
   async function concluir(ocorrencia: Ocorrencia) {
     if (!podeConcluir(ocorrencia) || conclusao.isPending) return;
@@ -212,15 +223,48 @@ function OcorrenciaPage() {
         <PrioridadeSecao key={id} ocorrencia={o} demonstracao={demonstracao} />
 
         {demonstracao && o.status !== "concluida" && <DecisaoSecao ocorrencia={o} />}
-        {!demonstracao && o.status === "nova" && (
+        {!demonstracao && o.status === "nova" && !delegacao && (
           <DecisaoSecao
             idReal={String(o.id)}
-            aoRegistrar={() => {
+            aoRegistrar={(tipo, contato) => {
               void queryClient.invalidateQueries({ queryKey: chaveFila() });
               void queryClient.invalidateQueries({ queryKey: ["historico", o.id] });
+              if (tipo === "delegar") {
+                setDelegacao({ contato });
+                void queryClient.invalidateQueries({ queryKey: ["ocorrencia", id], exact: true });
+                return;
+              }
               void navigate({ to: "/fila", search: { aba: "andamento" } });
             }}
           />
+        )}
+        {(delegacao || contato) && o.status !== "concluida" && (
+          <Secao titulo="Delegação registrada" icone={<MessageCircle className="size-4" />}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              {contato && (
+                <div className="text-sm">
+                  <p>Delegada para <strong>{PAPEIS_RESPONSAVEL.get(contato.papel) ?? contato.papel}</strong></p>
+                  {contato.temCelular && (
+                    <p className="text-muted-foreground">{contato.celular}</p>
+                  )}
+                </div>
+              )}
+              {contato?.temCelular ? (
+                <Button type="button" disabled className="disabled:opacity-100">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12.04 2a9.91 9.91 0 0 0-8.59 14.85L2 22l5.27-1.38A9.96 9.96 0 1 0 12.04 2Zm0 18.24a8.26 8.26 0 0 1-4.21-1.15l-.3-.18-3.13.82.84-3.05-.2-.31a8.28 8.28 0 1 1 7 3.87Zm4.54-6.18c-.25-.12-1.47-.72-1.7-.81-.23-.08-.4-.12-.56.13-.17.24-.65.81-.8.98-.14.16-.29.18-.54.06-.25-.13-1.05-.39-2-1.24-.74-.66-1.24-1.47-1.38-1.72-.15-.25-.02-.38.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.16.04-.31-.02-.44-.06-.12-.56-1.35-.77-1.84-.2-.49-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.23.25-.87.85-.87 2.08 0 1.22.89 2.41 1.02 2.57.12.17 1.75 2.68 4.24 3.75.59.26 1.05.41 1.41.52.6.19 1.14.17 1.57.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.08.15-1.19-.06-.1-.23-.16-.48-.29Z" />
+                  </svg>
+                  Avisar pelo WhatsApp
+                </Button>
+              ) : (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {contato?.temCelular === false
+                    ? "O responsável não tem celular cadastrado."
+                    : "O celular do responsável não está disponível para aviso pelo WhatsApp."}
+                </p>
+              )}
+            </div>
+          </Secao>
         )}
 
         {demonstracao ? (

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { requisitarAutenticado } from "./auth";
+import { contatoResponsavelSchema } from "./h11-api";
 import {
   concluirOcorrencia,
   type Ocorrencia,
@@ -81,7 +82,12 @@ export function useOcorrenciaApi(id: string, enabled: boolean) {
       });
       if (resposta.status === 404) return null;
       if (!resposta.ok) throw new Error("Não foi possível consultar a ocorrência.");
-      return mapearCartao(await resposta.json());
+      const dados = await resposta.json();
+      const contato = contatoResponsavelSchema.safeParse(dados.contatoResponsavel);
+      return {
+        ...mapearCartao(dados),
+        contatoResponsavel: contato.success ? contato.data : undefined,
+      };
     },
   });
 }
