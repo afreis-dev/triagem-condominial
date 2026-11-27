@@ -1,11 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { buscarFila } from "./fila-api";
 
-vi.mock("./auth", () => ({
-  API_URL: "http://localhost:8000",
-  obterToken: () => "token-de-teste",
-}));
-
 afterEach(() => vi.unstubAllGlobals());
 
 it("consulta de novo e retorna a nova urgente com os dados do condomínio", async () => {
@@ -40,7 +35,8 @@ it("consulta de novo e retorna a nova urgente com os dados do condomínio", asyn
   ]);
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(fetchMock).toHaveBeenLastCalledWith("http://localhost:8000/ocorrencias", {
-    headers: { Authorization: "Bearer token-de-teste" },
+    credentials: "include",
+    headers: expect.any(Headers),
     cache: "no-store",
     signal,
   });

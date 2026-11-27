@@ -7,7 +7,7 @@ except RuntimeError:
 
 import main  # noqa: E402
 from lib import auth_deps
-from lib.auth import criar_token
+from lib.auth import criar_token, token_csrf
 
 
 class ConexaoDoTeste:
@@ -34,9 +34,10 @@ def cliente(conexao, monkeypatch, sindico):
     monkeypatch.setattr(main, "conectar", lambda: ConexaoDoTeste(conexao))
     monkeypatch.setattr(auth_deps, "conectar", lambda: ConexaoDoTeste(conexao))
     monkeypatch.setenv("JWT_SECRET", "segredo-local-do-pytest-h10-1234567890")
+    token = criar_token(sindico)
     return TestClient(
         main.app, raise_server_exceptions=False,
-        headers={"Authorization": f"Bearer {criar_token(sindico)}"},
+        headers={"Cookie": f"triagem_sessao={token}", "X-CSRF-Token": token_csrf(token)},
     )
 
 
@@ -138,7 +139,10 @@ def test_autenticacao_e_carteira_protegem_leitura_e_alteracao(cliente, conexao, 
 
     protegido = f"/ocorrencias/{ocorrencia_id}"
     for token, status in [(None, 401), ("invalido", 401), (criar_token(outro_id), 404)]:
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        headers = {
+            "Cookie": f"triagem_sessao={token}",
+            "X-CSRF-Token": token_csrf(token),
+        } if token else {}
         with TestClient(main.app, headers=headers) as visitante:
             assert visitante.get(protegido).status_code == status
             assert visitante.get(f"{protegido}/decisoes").status_code == status

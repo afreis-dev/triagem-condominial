@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 import main
 import lib.auth_deps as auth_deps
-from lib.auth import criar_token
+from lib.auth import criar_token, token_csrf
 
 
 class ConexaoDoTeste:
@@ -114,10 +114,10 @@ def test_isolamento_real_entre_duas_carteiras(conexao, monkeypatch):
         return getattr(api, metodo)(caminho, **argumentos)
 
     with TestClient(main.app) as api:
-        tokens = [
-            {"Authorization": f"Bearer {criar_token(sid)}"}
-            for sid in sindicos
-        ]
+        tokens = []
+        for sid in sindicos:
+            token = criar_token(sid)
+            tokens.append({"Cookie": f"triagem_sessao={token}", "X-CSRF-Token": token_csrf(token)})
 
         # Cada síndico tenta acessar ocorrências do outro.
         for indice, alvo in ((0, 2), (1, 1)):

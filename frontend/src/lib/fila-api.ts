@@ -1,15 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { API_URL, obterToken } from "./auth";
+import { requisitarAutenticado } from "./auth";
 import {
   concluirOcorrencia,
   type Ocorrencia,
   type Prioridade,
 } from "./ocorrencias";
 
-const URL = `${API_URL}/ocorrencias`;
+const URL = "/ocorrencias";
 
 export function chaveFila() {
-  return ["fila", obterToken()] as const;
+  return ["fila"] as const;
 }
 
 type CartaoFila = {
@@ -70,15 +70,12 @@ function mapearCartao(cartao: CartaoFila): Ocorrencia {
 }
 
 export function useOcorrenciaApi(id: string, enabled: boolean) {
-  const token = obterToken();
   return useQuery({
-    queryKey: ["ocorrencia", id, token],
+    queryKey: ["ocorrencia", id],
     enabled,
     retry: false,
     queryFn: async ({ signal }) => {
-      if (!token) throw new Error("Entre novamente para consultar a ocorrência.");
-      const resposta = await fetch(`${URL}/${encodeURIComponent(id)}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const resposta = await requisitarAutenticado(`${URL}/${encodeURIComponent(id)}`, {
         cache: "no-store",
         signal,
       });
@@ -91,13 +88,11 @@ export function useOcorrenciaApi(id: string, enabled: boolean) {
 
 export function usePrioridadeApi(id: string) {
   const queryClient = useQueryClient();
-  const token = obterToken();
   return useMutation({
     mutationFn: async ({ prioridade, motivo }: { prioridade: Prioridade; motivo?: string }) => {
-      if (!token) throw new Error("Entre novamente para confirmar a prioridade.");
-      const resposta = await fetch(`${URL}/${encodeURIComponent(id)}/prioridade`, {
+      const resposta = await requisitarAutenticado(`${URL}/${encodeURIComponent(id)}/prioridade`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prioridade, motivo }),
       });
       if (!resposta.ok) {
@@ -109,9 +104,9 @@ export function usePrioridadeApi(id: string) {
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["ocorrencia", id, token] }),
+        queryClient.invalidateQueries({ queryKey: ["ocorrencia", id] }),
         queryClient.invalidateQueries({ queryKey: chaveFila() }),
-        queryClient.invalidateQueries({ queryKey: ["historico", Number(id), token] }),
+        queryClient.invalidateQueries({ queryKey: ["historico", Number(id)] }),
       ]);
     },
   });
@@ -140,10 +135,7 @@ export function useFilaApi(habilitada = true) {
 }
 
 export async function buscarFila(signal: AbortSignal): Promise<Ocorrencia[]> {
-  const token = obterToken();
-  if (!token) throw new Error("Entre novamente para consultar a fila.");
-  const resposta = await fetch(URL, {
-    headers: { Authorization: `Bearer ${token}` },
+  const resposta = await requisitarAutenticado(URL, {
     cache: "no-store",
     signal,
   });
@@ -162,9 +154,8 @@ export function useConclusaoApi() {
   const chave = chaveFila();
   return useMutation({
     mutationFn: async (id: number) => {
-      const resposta = await fetch(`${URL}/${id}/concluir`, {
+      const resposta = await requisitarAutenticado(`${URL}/${id}/concluir`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${obterToken()}` },
       });
       if (!resposta.ok && resposta.status !== 404 && resposta.status !== 409) {
         throw new Error("Não foi possível concluir a ocorrência.");

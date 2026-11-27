@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type EventoHistorico, type Prioridade } from "./ocorrencias";
-import { API_URL, obterToken } from "./auth";
+import { requisitarAutenticado } from "./auth";
 
 export type RegistroDecisao = {
   id: number;
@@ -120,22 +120,14 @@ export function mapearRegistro(registro: RegistroDecisao): EventoHistorico {
 }
 
 export function useHistoricoApi(id: number, habilitada = true) {
-  const token = obterToken();
   return useQuery({
-    queryKey: ["historico", id, token],
+    queryKey: ["historico", id],
     enabled: habilitada,
     retry: false,
     queryFn: async ({ signal }) => {
-      if (!token) {
-        throw new Error("Entre novamente para consultar o histórico.");
-      }
-
-      const resposta = await fetch(`${API_URL}/api/ocorrencias/${id}/decisoes`, {
+      const resposta = await requisitarAutenticado(`/api/ocorrencias/${id}/decisoes`, {
         signal,
         cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
       if (!resposta.ok) {
         throw new Error("Não foi possível consultar o histórico.");

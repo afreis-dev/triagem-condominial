@@ -3,11 +3,17 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.lib.auth import gerar_hash
+from backend.lib.auth import gerar_hash, token_csrf
 from backend.main import app
 
 EMAIL = "sindico@teste.com"
 SENHA = "SenhaTeste@2026!"
+
+
+def cabecalhos(sindico_id=7):
+    from lib.auth import criar_token
+    token = criar_token(sindico_id)
+    return {"Cookie": f"triagem_sessao={token}", "X-CSRF-Token": token_csrf(token)}
 
 
 @pytest.fixture
@@ -35,12 +41,92 @@ def test_login_com_credenciais_validas(cliente):
 
     resposta = api.post(
         "/auth/login",
-        json={"email": EMAIL, "senha": SENHA},
+        json={"identificador": EMAIL, "senha": SENHA},
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert resposta.status_code == 200
-    assert resposta.json()["token_type"] == "bearer"
-    assert resposta.json()["access_token"]
+    assert resposta.json() == {"ok": True}
+    assert "triagem_sessao=" in resposta.headers["set-cookie"]
+    assert "httponly" in resposta.headers["set-cookie"].lower()
+    assert "samesite=lax" in resposta.headers["set-cookie"].lower()
+
+
+def test_login_com_celular_formatado(cliente):
+    api, cursor = cliente
+    resposta = api.post(
+        "/auth/login",
+        json={"identificador": "(19) 99123-4567", "senha": SENHA},
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
+    assert resposta.status_code == 200
+    assert cursor.execute.call_args.args[1] == ("(19) 99123-4567", "19991234567", "19991234567")
+
+
+def test_login_com_celular_no_postgresql(conexao, sindico, monkeypatch):
+    import backend.main as modulo
+
+    class ConexaoDoTeste:
+        def cursor(self):
+            return conexao.cursor()
+
+        def close(self):
+            pass
+
+    monkeypatch.setenv("JWT_SECRET", "segredo-exclusivo-para-testes-de-endpoints-2026")
+    with conexao.cursor() as cursor:
+        cursor.execute(
+            "UPDATE sindicos SET celular = %s, senha_hash = %s WHERE id = %s",
+            ("(19) 99123-4567", gerar_hash(SENHA), sindico),
+        )
+    conexao.commit()
+    monkeypatch.setattr(modulo, "conectar", lambda: ConexaoDoTeste())
+
+    with TestClient(app) as api:
+        resposta = api.post(
+            "/auth/login",
+            json={"identificador": "19991234567", "senha": SENHA},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+    assert resposta.status_code == 200
+    assert "triagem_sessao=" in resposta.headers["set-cookie"]
+
+
+def test_login_bloqueia_origem_nao_autorizada(cliente):
+    api, cursor = cliente
+    resposta = api.post(
+        "/auth/login",
+        json={"identificador": EMAIL, "senha": SENHA},
+        headers={"Origin": "https://outra-origem.example", "X-Requested-With": "XMLHttpRequest"},
+    )
+    assert resposta.status_code == 403
+    cursor.execute.assert_not_called()
+
+
+def test_login_pelo_swagger_na_mesma_origem(cliente):
+    api, _ = cliente
+    resposta = api.post(
+        "/auth/login",
+        json={"identificador": EMAIL, "senha": SENHA},
+        headers={"Origin": "http://testserver"},
+    )
+    assert resposta.status_code == 200
+    assert "httponly" in resposta.headers["set-cookie"].lower()
+
+
+def test_login_exige_cabecalho_de_requisicao_do_app(cliente):
+    api, cursor = cliente
+    resposta = api.post("/auth/login", json={"identificador": EMAIL, "senha": SENHA})
+    assert resposta.status_code == 403
+    cursor.execute.assert_not_called()
+
+
+def test_swagger_documenta_csrf_nas_rotas_de_escrita(cliente):
+    api, _ = cliente
+    esquema = api.get("/openapi.json").json()
+    assert esquema["components"]["securitySchemes"]["CSRF"]["name"] == "X-CSRF-Token"
+    assert esquema["components"]["securitySchemes"]["CSRF"]["in"] == "header"
+    assert esquema["paths"]["/auth/logout"]["post"]["security"] == [{"CSRF": []}]
 
 
 def test_login_com_senha_incorreta(cliente):
@@ -48,7 +134,8 @@ def test_login_com_senha_incorreta(cliente):
 
     resposta = api.post(
         "/auth/login",
-        json={"email": EMAIL, "senha": "senha-errada"},
+        json={"identificador": EMAIL, "senha": "senha-errada"},
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert resposta.status_code == 401
@@ -60,7 +147,8 @@ def test_login_com_usuario_inexistente(cliente):
 
     resposta = api.post(
         "/auth/login",
-        json={"email": "inexistente@teste.com", "senha": SENHA},
+        json={"identificador": "inexistente@teste.com", "senha": SENHA},
+        headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
     assert resposta.status_code == 401
@@ -72,6 +160,49 @@ def test_perfil_sem_token(cliente):
     resposta = api.get("/auth/me")
 
     assert resposta.status_code == 401
+
+
+def test_bearer_nao_autentica_mais(cliente):
+    from lib.auth import criar_token
+
+    api, _ = cliente
+    resposta = api.get("/auth/me", headers={"Authorization": f"Bearer {criar_token(7)}"})
+    assert resposta.status_code == 401
+
+
+def test_logout_exige_csrf_e_apaga_cookie(cliente, monkeypatch):
+    import lib.auth_deps as auth_deps
+
+    api, _ = cliente
+    conexao = MagicMock()
+    conexao.cursor.return_value.__enter__.return_value.fetchone.return_value = (7, "Síndico Teste", EMAIL)
+    monkeypatch.setattr(auth_deps, "conectar", lambda: conexao)
+    token = cabecalhos(7)["Cookie"].split("=", 1)[1]
+
+    sem_csrf = api.post("/auth/logout", headers={"Cookie": f"triagem_sessao={token}"})
+    assert sem_csrf.status_code == 403
+    resposta = api.post("/auth/logout", headers={
+        "Cookie": f"triagem_sessao={token}", "X-CSRF-Token": token_csrf(token),
+    })
+    assert resposta.status_code == 200
+    assert "max-age=0" in resposta.headers["set-cookie"].lower()
+
+
+@pytest.mark.parametrize("rota", ["/ocorrencias/aprovar-lote", "/ocorrencias/desfazer-lote"])
+def test_rotas_de_lote_exigem_csrf(cliente, monkeypatch, rota):
+    import lib.auth_deps as auth_deps
+
+    api, _ = cliente
+    conexao = MagicMock()
+    conexao.cursor.return_value.__enter__.return_value.fetchone.return_value = (7, "Síndico Teste", EMAIL)
+    monkeypatch.setattr(auth_deps, "conectar", lambda: conexao)
+
+    resposta = api.post(
+        rota,
+        json={"ids": [1]},
+        headers={"Cookie": cabecalhos(7)["Cookie"]},
+    )
+    assert resposta.status_code == 403
 
 
 def test_lista_condominios_exige_login(cliente):
@@ -93,7 +224,7 @@ def test_lista_condominios_consulta_a_carteira_do_sindico(cliente, monkeypatch):
 
     resposta = api.get(
         "/api/condominios",
-        headers={"Authorization": f"Bearer {criar_token(7)}"},
+        headers=cabecalhos(7),
     )
     assert resposta.status_code == 200
     assert resposta.json() == [{"id": 3, "nome": "Vista Verde"}]
@@ -107,7 +238,7 @@ def test_perfil_com_token_invalido(cliente):
 
     resposta = api.get(
         "/auth/me",
-        headers={"Authorization": "Bearer token-invalido"},
+        headers={"Cookie": "triagem_sessao=token-invalido"},
     )
 
     assert resposta.status_code == 401
@@ -133,11 +264,13 @@ def test_perfil_com_token_valido(cliente, monkeypatch):
 
     resposta = api.get(
         "/auth/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Cookie": f"triagem_sessao={token}"},
     )
 
     assert resposta.status_code == 200
-    assert resposta.json() == {
+    dados = resposta.json()
+    assert len(dados.pop("csrfToken")) == 64
+    assert dados == {
         "id": 1,
         "nome": "Síndico Teste",
         "email": EMAIL,
@@ -162,7 +295,7 @@ def test_perfil_com_token_expirado(cliente):
 
     resposta = api.get(
         "/auth/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Cookie": f"triagem_sessao={token}"},
     )
 
     assert resposta.status_code == 401
@@ -199,9 +332,7 @@ def test_historico_de_outro_sindico_deve_ser_bloqueado(cliente, monkeypatch):
     # A ocorrência 1 não pertence à carteira do síndico 7
     resposta = api.get(
         "/api/ocorrencias/1/decisoes",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 404
@@ -239,9 +370,7 @@ def test_historico_do_proprio_sindico_deve_ser_permitido(cliente, monkeypatch):
 
     resposta = api.get(
         "/api/ocorrencias/1/decisoes",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 200
@@ -292,9 +421,7 @@ def test_responsaveis_do_proprio_sindico_deve_ser_permitido(cliente, monkeypatch
 
     resposta = api.get(
         "/ocorrencias/1/responsaveis",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 200
@@ -325,9 +452,7 @@ def test_responsaveis_de_outro_sindico_deve_ser_bloqueado(cliente, monkeypatch):
 
     resposta = api.get(
         "/ocorrencias/1/responsaveis",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 404
@@ -375,7 +500,7 @@ def test_concluir_de_outro_sindico_deve_ser_bloqueado(cliente, monkeypatch):
 
     resposta = api.patch(
         "/api/ocorrencias/1/concluir",
-        headers={"Authorization": f"Bearer {criar_token(7)}"},
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 404
@@ -417,9 +542,7 @@ def test_concluir_do_proprio_sindico_deve_ser_permitido(cliente, monkeypatch):
 
     resposta = api.patch(
         "/api/ocorrencias/1/concluir",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 200
@@ -483,9 +606,7 @@ def test_registrar_acao_de_outro_sindico_deve_ser_bloqueado(
 
     resposta = api.post(
         "/ocorrencias/1/acoes",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
         json={
             "acao": "eu_mesmo",
             "nota": "Teste de autorização",
@@ -532,9 +653,7 @@ def test_registrar_acao_do_proprio_sindico_deve_ser_permitido(
 
     resposta = api.post(
         "/ocorrencias/1/acoes",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
         json={
             "acao": "eu_mesmo",
             "nota": "Vou cuidar desta ocorrência",
@@ -588,9 +707,7 @@ def test_alterar_prioridade_de_outro_sindico_deve_ser_bloqueado(
 
     resposta = api.patch(
         "/ocorrencias/1/prioridade",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
         json={
             "prioridade": "alta",
             "motivo": "Teste de autorização",
@@ -638,9 +755,7 @@ def test_alterar_prioridade_do_proprio_sindico_deve_ser_permitido(
 
     resposta = api.patch(
         "/ocorrencias/1/prioridade",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
         json={
             "prioridade": "alta",
             "motivo": "Necessita atendimento rápido",
@@ -697,9 +812,7 @@ def test_detalhe_de_outro_sindico_deve_ser_bloqueado(
 
     resposta = api.get(
         "/ocorrencias/1",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 404
@@ -738,9 +851,7 @@ def test_detalhe_do_proprio_sindico_deve_ser_permitido(
 
     resposta = api.get(
         "/ocorrencias/1",
-        headers={
-            "Authorization": f"Bearer {criar_token(7)}"
-        },
+        headers=cabecalhos(7),
     )
 
     assert resposta.status_code == 200

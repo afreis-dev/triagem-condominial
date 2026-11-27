@@ -7,7 +7,7 @@ except RuntimeError:
 
 import main  # noqa: E402
 from lib import auth_deps  # noqa: E402
-from lib.auth import criar_token  # noqa: E402
+from lib.auth import criar_token, token_csrf  # noqa: E402
 
 
 class ConexaoDoTeste:
@@ -40,7 +40,9 @@ def cliente_sem_token(conexao, monkeypatch):
 
 @pytest.fixture
 def cliente(cliente_sem_token, sindico):
-    cliente_sem_token.headers["Authorization"] = f"Bearer {criar_token(sindico)}"
+    token = criar_token(sindico)
+    cliente_sem_token.headers["Cookie"] = f"triagem_sessao={token}"
+    cliente_sem_token.headers["X-CSRF-Token"] = token_csrf(token)
     return cliente_sem_token
 
 
@@ -65,10 +67,10 @@ def contar(conexao):
         return cur.fetchone()[0]
 
 
-@pytest.mark.parametrize("token", [None, "Bearer token-invalido"])
+@pytest.mark.parametrize("token", [None, "token-invalido"])
 def test_exige_token_valido(cliente_sem_token, conexao, condominio, token):
     if token is not None:
-        cliente_sem_token.headers["Authorization"] = token
+        cliente_sem_token.headers["Cookie"] = f"triagem_sessao={token}"
     assert colar(cliente_sem_token, condominio).status_code == 401
     assert contar(conexao) == 0
 
@@ -81,7 +83,9 @@ def test_rejeita_condominio_de_outro_sindico(cliente_sem_token, conexao, condomi
         )
         outro_sindico = cursor.fetchone()[0]
 
-    cliente_sem_token.headers["Authorization"] = f"Bearer {criar_token(outro_sindico)}"
+    token = criar_token(outro_sindico)
+    cliente_sem_token.headers["Cookie"] = f"triagem_sessao={token}"
+    cliente_sem_token.headers["X-CSRF-Token"] = token_csrf(token)
     assert colar(cliente_sem_token, condominio).status_code == 403
     assert contar(conexao) == 0
 

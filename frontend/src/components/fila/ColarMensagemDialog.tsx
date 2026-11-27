@@ -14,7 +14,6 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { obterToken } from "@/lib/auth";
 import { mascaraCelular } from "@/lib/chamado";
 import { buscarCondominiosDaCarteira, salvarMensagemColada } from "@/lib/colar-mensagem-api";
 
@@ -31,7 +30,7 @@ export function ColarMensagemDialog({
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
   const condominios = useQuery({
-    queryKey: ["condominios-da-carteira", obterToken()],
+    queryKey: ["condominios-da-carteira"],
     queryFn: ({ signal }) => buscarCondominiosDaCarteira(signal),
     enabled: open,
     retry: false,

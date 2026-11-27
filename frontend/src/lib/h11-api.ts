@@ -1,13 +1,9 @@
 import { z } from "zod";
-import { API_URL, obterToken } from "./auth";
+import { requisitarAutenticado } from "./auth";
 import type { TipoDecisao } from "./ocorrencias";
 
 async function requisitar(caminho: string, init: RequestInit = {}) {
-  const token = obterToken();
-  if (!token) throw new Error("Entre novamente para registrar a decis?o.");
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  const resposta = await fetch(`${API_URL}${caminho}`, { ...init, headers, cache: "no-store" });
+  const resposta = await requisitarAutenticado(caminho, { ...init, cache: "no-store" });
   const dados: unknown = await resposta.json();
   if (resposta.ok) return dados;
   const erro = z.object({ detail: z.string() }).safeParse(dados);
