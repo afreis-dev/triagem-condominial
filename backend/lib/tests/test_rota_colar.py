@@ -5,6 +5,7 @@ try:
 except RuntimeError:
     pytest.skip("instale o httpx2 para testar a rota", allow_module_level=True)
 
+import lib.salvar_ocorrencia as modulo  # noqa: E402
 import main  # noqa: E402
 from lib import auth_deps  # noqa: E402
 from lib.auth import criar_token, token_csrf  # noqa: E402
@@ -172,14 +173,26 @@ def test_classifica_a_ocorrencia(cliente, conexao, condominio):
     assert ocorrencia(conexao, risco)[7:] == ("urgente", True)
 
 
-def test_se_algo_falha_depois_de_gravar_nada_fica_gravado(cliente, conexao, condominio, monkeypatch):
-    salvar = main.salvar_ocorrencia
+def test_a_ocorrencia_ja_esta_no_banco_quando_a_classificacao_roda(
+    cliente, condominio, contar_confirmadas, monkeypatch
+):
+    classificar = modulo.classificar
+    vistas = []
 
-    def grava_e_falha(dados, conexao=None):
-        salvar(dados, conexao)
+    def espiar(texto):
+        vistas.append(contar_confirmadas())
+        return classificar(texto)
+
+    monkeypatch.setattr(modulo, "classificar", espiar)
+    assert colar(cliente, condominio).status_code == 201
+    assert vistas == [1]
+
+
+def test_se_algo_falha_depois_de_gravada_a_ocorrencia_continua_no_banco(cliente, conexao, condominio, monkeypatch):
+    def falhar(*args):
         raise RuntimeError("falhou depois de gravar")
 
-    monkeypatch.setattr(main, "salvar_ocorrencia", grava_e_falha)
+    monkeypatch.setattr(modulo, "_guardar_e_registrar", falhar)
     assert colar(cliente, condominio).status_code == 500
     conexao.rollback()
-    assert contar(conexao) == 0
+    assert contar(conexao) == 1

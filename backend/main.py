@@ -128,7 +128,7 @@ def _ocorrencia_da_carteira(cursor, id: int, sindico_id: int, *, bloquear=False)
                o.status, o.prioridade, o.motivo, o.criada_em, o.concluida_em,
                o.nome, o.apartamento, o.celular, o.local, o.travada,
                o.palavra_de_risco, COALESCE(entrada.prioridade_sugerida, o.prioridade),
-               o.categoria, o.responsavel_sugerido
+               o.categoria, o.responsavel_sugerido, o.fonte
         FROM ocorrencias o
         JOIN condominios c ON c.id = o.condominio_id
         LEFT JOIN LATERAL (
@@ -150,7 +150,7 @@ def _ocorrencia_da_carteira(cursor, id: int, sindico_id: int, *, bloquear=False)
         "id", "protocolo", "condominioId", "condominio", "descricao", "origem",
         "status", "prioridade", "motivo", "criadaEm", "concluidaEm",
         "nome", "apartamento", "celular", "local", "travada",
-        "palavraDeRisco", "prioridadeSugerida", "categoria", "responsavel",
+        "palavraDeRisco", "prioridadeSugerida", "categoria", "responsavel", "fonte",
     )
     return dict(zip(campos, linha))
 
@@ -184,7 +184,7 @@ def colar(body: ColarBody, sindico=Depends(sindico_com_csrf)):
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=403, detail="Condomínio fora da sua carteira")
 
-        resultado = salvar_ocorrencia(dados, conn)
+        resultado = salvar_ocorrencia(dados, conn, confirmar=True)
     if not resultado["ok"]:
         raise HTTPException(status_code=422, detail=resultado["erros"])
     return resultado
@@ -456,6 +456,7 @@ def criar_ocorrencia_form(identificador: str, body: OcorrenciaFormBody):
         resultado = salvar_ocorrencia(
             {**dados, "condominioId": condominio_id, "origem": body.perfil},
             conexao=conexao,
+            confirmar=True,
         )
     if not resultado["ok"]:
         return JSONResponse(content=resultado)
