@@ -188,6 +188,23 @@ def test_logout_exige_csrf_e_apaga_cookie(cliente, monkeypatch):
     assert "max-age=0" in resposta.headers["set-cookie"].lower()
 
 
+@pytest.mark.parametrize("rota", ["/ocorrencias/aprovar-lote", "/ocorrencias/desfazer-lote"])
+def test_rotas_de_lote_exigem_csrf(cliente, monkeypatch, rota):
+    import lib.auth_deps as auth_deps
+
+    api, _ = cliente
+    conexao = MagicMock()
+    conexao.cursor.return_value.__enter__.return_value.fetchone.return_value = (7, "Síndico Teste", EMAIL)
+    monkeypatch.setattr(auth_deps, "conectar", lambda: conexao)
+
+    resposta = api.post(
+        rota,
+        json={"ids": [1]},
+        headers={"Cookie": cabecalhos(7)["Cookie"]},
+    )
+    assert resposta.status_code == 403
+
+
 def test_lista_condominios_exige_login(cliente):
     api, _ = cliente
     assert api.get("/api/condominios").status_code == 401

@@ -210,7 +210,7 @@ def rota_para_aprovacao(sindico=Depends(sindico_autenticado)):
         conn.close()
 
 @app.post("/ocorrencias/aprovar-lote")
-def rota_aprovar_lote(payload: dict, sindico=Depends(sindico_autenticado)):
+def rota_aprovar_lote(payload: dict, sindico=Depends(sindico_com_csrf)):
     conn = conectar()
     try:
         return aprovar_lote(conn, payload.get("ids", []), sindico["id"])
@@ -218,7 +218,7 @@ def rota_aprovar_lote(payload: dict, sindico=Depends(sindico_autenticado)):
         conn.close()
 
 @app.post("/ocorrencias/desfazer-lote")
-def rota_desfazer_lote(payload: dict, sindico=Depends(sindico_autenticado)):
+def rota_desfazer_lote(payload: dict, sindico=Depends(sindico_com_csrf)):
     conn = conectar()
     try:
         return desfazer_lote(conn, payload.get("ids", []), sindico["id"])

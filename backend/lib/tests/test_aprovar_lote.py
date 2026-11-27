@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 import main
 from lib import auth_deps
-from lib.auth import criar_token
+from lib.auth import criar_token, token_csrf
 from lib.registrar_decisao import buscar_decisoes, registrar_decisao
 
 
@@ -52,8 +52,9 @@ def client(conexao, monkeypatch):
         yield cliente
 
 
-def _token(sindico_id):
-    return criar_token(sindico_id)
+def _headers(sindico_id):
+    token = criar_token(sindico_id)
+    return {"Cookie": f"triagem_sessao={token}", "X-CSRF-Token": token_csrf(token)}
 
 def _criar_ocorrencia(amb, prioridade="normal", travada=False, status="nova",
                       responsavel=None, motivo=None, condominio_id=None):
@@ -89,7 +90,7 @@ def test_aprova_varias_de_uma_vez(ambiente, client):
     ids = [_criar_ocorrencia(ambiente) for _ in range(3)]
     r = client.post(
         "/ocorrencias/aprovar-lote", json={"ids": ids},
-        headers={"Authorization": f"Bearer {_token(ambiente['sindico'])}"},
+        headers=_headers(ambiente["sindico"]),
     )
     assert r.status_code == 200, r.text
     assert r.json()["aprovadas"] == 3
@@ -99,7 +100,7 @@ def test_recusa_urgente_ou_travada(ambiente, client, prioridade, travada):
     oid = _criar_ocorrencia(ambiente, prioridade=prioridade, travada=travada)
     r = client.post(
         "/ocorrencias/aprovar-lote", json={"ids": [oid]},
-        headers={"Authorization": f"Bearer {_token(ambiente['sindico'])}"},
+        headers=_headers(ambiente["sindico"]),
     )
     assert r.status_code == 409, r.text
 
@@ -108,7 +109,7 @@ def test_recusa_outro_sindico(ambiente, client):
     oid = _criar_ocorrencia(ambiente)
     r = client.post(
         "/ocorrencias/aprovar-lote", json={"ids": [oid]},
-        headers={"Authorization": f"Bearer {_token(ambiente['outro_sindico'])}"},
+        headers=_headers(ambiente["outro_sindico"]),
     )
     assert r.status_code == 409, r.text
 
@@ -116,7 +117,7 @@ def test_nao_grava_nada_se_um_id_invalido(ambiente, client):
     id_ok = _criar_ocorrencia(ambiente)
     r = client.post(
         "/ocorrencias/aprovar-lote", json={"ids": [id_ok, 999999]},
-        headers={"Authorization": f"Bearer {_token(ambiente['sindico'])}"},
+        headers=_headers(ambiente["sindico"]),
     )
     assert r.status_code == 409, r.text
     with ambiente["conn"].cursor() as cur:
@@ -133,7 +134,7 @@ def test_registro_aparece_no_historico(ambiente, client):
     oid = _criar_ocorrencia(ambiente)
     r = client.post(
         "/ocorrencias/aprovar-lote", json={"ids": [oid]},
-        headers={"Authorization": f"Bearer {_token(ambiente['sindico'])}"},
+        headers=_headers(ambiente["sindico"]),
     )
     assert r.status_code == 200, r.text
     decisoes = buscar_decisoes(oid, ambiente["conn"])
@@ -141,7 +142,7 @@ def test_registro_aparece_no_historico(ambiente, client):
 
 def test_desfazer_lote_valido(ambiente, client):
     ids = [_criar_ocorrencia(ambiente) for _ in range(2)]
-    token = {"Authorization": f"Bearer {_token(ambiente['sindico'])}"}
+    token = _headers(ambiente["sindico"])
     assert client.post("/ocorrencias/aprovar-lote", json={"ids": ids}, headers=token).status_code == 200
     r = client.post("/ocorrencias/desfazer-lote", json={"ids": ids}, headers=token)
     assert r.status_code == 200, r.text
@@ -155,7 +156,7 @@ def test_desfazer_rejeita_acao_individual(ambiente, client):
     _acao_individual(ambiente, oid)
     r = client.post(
         "/ocorrencias/desfazer-lote", json={"ids": [oid]},
-        headers={"Authorization": f"Bearer {_token(ambiente['sindico'])}"},
+        headers=_headers(ambiente["sindico"]),
     )
     assert r.status_code == 409, r.text
     with ambiente["conn"].cursor() as cur:
@@ -165,7 +166,7 @@ def test_desfazer_rejeita_acao_individual(ambiente, client):
 def test_preserva_prioridade_alta_e_baixa_no_historico(ambiente, client):
     id_alta = _criar_ocorrencia(ambiente, prioridade="alta")
     id_baixa = _criar_ocorrencia(ambiente, prioridade="baixa")
-    token = {"Authorization": f"Bearer {_token(ambiente['sindico'])}"}
+    token = _headers(ambiente["sindico"])
     r = client.post(
         "/ocorrencias/aprovar-lote", json={"ids": [id_alta, id_baixa]}, headers=token,
     )
@@ -184,7 +185,7 @@ def test_preserva_prioridade_alta_e_baixa_no_historico(ambiente, client):
 def test_rejeita_ids_invalidos(ambiente, client, rota, ids):
     r = client.post(
         f"/ocorrencias/{rota}", json={"ids": ids},
-        headers={"Authorization": f"Bearer {_token(ambiente['sindico'])}"},
+        headers=_headers(ambiente["sindico"]),
     )
     assert r.status_code == 422, r.text
 
@@ -200,7 +201,7 @@ def test_lista_apenas_elegiveis_com_responsavel_e_motivo(ambiente, client):
 
     r = client.get(
         "/ocorrencias/para-aprovacao",
-        headers={"Authorization": f"Bearer {_token(ambiente['sindico'])}"},
+        headers=_headers(ambiente["sindico"]),
     )
 
     assert r.status_code == 200, r.text
