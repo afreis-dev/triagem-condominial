@@ -64,6 +64,31 @@ export interface Ocorrencia {
   mensagem?: string;
 }
 
+type DadosAvisoWhatsapp = {
+  celular: string | null | undefined;
+  condominio: string;
+  local?: string | null | undefined;
+  descricao: string;
+  protocolo: string;
+};
+
+export function montarLinkAvisoWhatsapp(dados: DadosAvisoWhatsapp): string | null {
+  const digitos = (dados.celular ?? "").replace(/\D/g, "");
+  const numero = /^\d{10,11}$/.test(digitos) ? `55${digitos}` : digitos;
+  if (!/^55\d{10,11}$/.test(numero)) return null;
+
+  const descricao = dados.descricao.trim().replace(/\s+/g, " ");
+  const resumo = descricao.length > 160 ? `${descricao.slice(0, 157).trimEnd()}...` : descricao;
+  const mensagem = [
+    `Condomínio: ${dados.condominio}`,
+    `Local: ${dados.local?.trim() || "Não informado"}`,
+    `Descrição: ${resumo}`,
+    `Protocolo: ${dados.protocolo}`,
+  ].join("\n");
+
+  return `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`;
+}
+
 export const ITENS_POR_PAGINA = 10;
 
 export const PRIORIDADES: { id: Prioridade; label: string }[] = [

@@ -7,9 +7,57 @@ import {
   contarPorPrioridade,
   criarDeMensagem,
   filtrarOcorrencias,
+  montarLinkAvisoWhatsapp,
   paginar,
   sugerirPrioridade,
 } from "./ocorrencias";
+
+describe("aviso pelo WhatsApp", () => {
+  const ocorrencia = {
+    celular: "(19) 99888-1122",
+    condominio: "Residencial Aurora",
+    local: "Hall do bloco B",
+    descricao: "Lâmpada do hall queimada",
+    protocolo: "AUR-2026-0042",
+  };
+
+  it("inclui o DDI brasileiro e codifica os quatro dados com acentos e quebras de linha", () => {
+    const link = montarLinkAvisoWhatsapp(ocorrencia);
+    expect(link).toBeTruthy();
+    const url = new URL(link!);
+    expect(`${url.origin}${url.pathname}`).toBe("https://wa.me/5519998881122");
+    expect(url.searchParams.get("text")).toBe(
+      "Condomínio: Residencial Aurora\n" +
+      "Local: Hall do bloco B\n" +
+      "Descrição: Lâmpada do hall queimada\n" +
+      "Protocolo: AUR-2026-0042",
+    );
+    expect(link).toContain("%0A");
+    expect(link).toContain("Condom%C3%ADnio");
+  });
+
+  it("aceita um número já internacional sem repetir o DDI", () => {
+    expect(montarLinkAvisoWhatsapp({ ...ocorrencia, celular: "+55 (19) 99888-1122" }))
+      .toContain("https://wa.me/5519998881122?");
+  });
+
+  it("resume descrições longas e substitui o local ausente", () => {
+    const link = montarLinkAvisoWhatsapp({
+      ...ocorrencia,
+      local: " ",
+      descricao: `  ${"lâmpada\n".repeat(30)}  `,
+    });
+    const mensagem = new URL(link!).searchParams.get("text")!;
+    expect(mensagem).toContain("Local: Não informado\nDescrição: ");
+    expect(mensagem.split("\nDescrição: ")[1]!.split("\nProtocolo: ")[0]).toHaveLength(160);
+    expect(mensagem).toContain("...\nProtocolo: AUR-2026-0042");
+  });
+
+  it.each([null, "", "123", "(19) 99888-1122 ramal 4"])(
+    "não gera link para celular inválido: %s",
+    (celular) => expect(montarLinkAvisoWhatsapp({ ...ocorrencia, celular })).toBeNull(),
+  );
+});
 
 describe("fila de ocorrências", () => {
   it("has 15 mock occurrences across 3 condos", () => {
