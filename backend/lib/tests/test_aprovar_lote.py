@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import main
 from lib import auth_deps
 from lib.auth import criar_token, token_csrf
+from lib.listar_fila import listar_fila
 from lib.registrar_decisao import buscar_decisoes, registrar_decisao
 
 
@@ -87,13 +88,50 @@ def _acao_individual(amb, oid):
     amb["conn"].commit()
 
 def test_aprova_varias_de_uma_vez(ambiente, client):
-    ids = [_criar_ocorrencia(ambiente) for _ in range(3)]
+    prioridades = ("alta", "normal", "baixa")
+    ids = [
+        _criar_ocorrencia(ambiente, prioridade=prioridades[i % 3],
+                         responsavel="zelador", motivo="Manutenção da área comum")
+        for i in range(12)
+    ]
+    urgente = _criar_ocorrencia(ambiente, prioridade="urgente")
+    headers = _headers(ambiente["sindico"])
+    r = client.get("/ocorrencias/para-aprovacao", headers=headers)
+    assert r.status_code == 200, r.text
+    lista = r.json()["ocorrencias"]
+    assert [o["id"] for o in lista] == ids
+    assert all(o["condominio"] and o["responsavel_sugerido"] == "zelador" for o in lista)
+    assert all(o["motivo"] == "Manutenção da área comum" for o in lista)
+
+    selecionados = ids[2:]
     r = client.post(
-        "/ocorrencias/aprovar-lote", json={"ids": ids},
-        headers=_headers(ambiente["sindico"]),
+        "/ocorrencias/aprovar-lote", json={"ids": selecionados}, headers=headers,
     )
     assert r.status_code == 200, r.text
-    assert r.json()["aprovadas"] == 3
+    assert r.json()["aprovadas"] == 10
+    assert set(r.json()["aprovados"]) == set(selecionados)
+
+    conn = ambiente["conn"]
+    fila = {o["id"]: o for o in listar_fila(ambiente["sindico"], conn)["ocorrencias"]}
+    for oid in ids[:2] + [urgente]:
+        assert fila[oid]["status"] == "nova"
+        assert buscar_decisoes(oid, conn) == []
+    for oid in selecionados:
+        assert fila[oid]["status"] == "em_andamento"
+        assert fila[oid]["acao"] == "delegar"
+        assert fila[oid]["marcaAcao"] == "Responsável: zelador"
+        registro, = buscar_decisoes(oid, conn)
+        assert (registro["tipo"], registro["responsavel"]) == ("aprovacao_lote", "zelador")
+
+    r = client.post("/ocorrencias/desfazer-lote", json={"ids": selecionados}, headers=headers)
+    assert r.status_code == 200, r.text
+    fila = {o["id"]: o for o in listar_fila(ambiente["sindico"], conn)["ocorrencias"]}
+    for oid in selecionados:
+        assert fila[oid]["status"] == "nova"
+        assert fila[oid]["marcaAcao"] is None
+        assert [r["tipo"] for r in buscar_decisoes(oid, conn)] == [
+            "aprovacao_lote", "desfazer_aprovacao_lote",
+        ]
 
 @pytest.mark.parametrize("prioridade, travada", [("urgente", False), ("normal", True)])
 def test_recusa_urgente_ou_travada(ambiente, client, prioridade, travada):

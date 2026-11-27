@@ -9,8 +9,11 @@ CONSULTA = """
       FROM ocorrencias o
       JOIN condominios c ON c.id = o.condominio_id
       LEFT JOIN LATERAL (
-          SELECT r.acao, r.responsavel, r.data_agendada FROM registros_decisao r
-          WHERE r.ocorrencia_id = o.id AND r.tipo = 'acao'
+          SELECT CASE WHEN r.tipo = 'aprovacao_lote' THEN 'delegar' ELSE r.acao END AS acao,
+                 r.responsavel, r.data_agendada
+          FROM registros_decisao r
+          WHERE r.ocorrencia_id = o.id
+            AND r.tipo IN ('acao', 'aprovacao_lote', 'desfazer_aprovacao_lote')
           ORDER BY r.data_hora DESC, r.id DESC LIMIT 1
       ) ultima ON TRUE
      WHERE c.sindico_id = %s
