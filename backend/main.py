@@ -199,6 +199,31 @@ def colar(body: ColarBody, sindico=Depends(sindico_com_csrf)):
 def listar_ocorrencias(sindico=Depends(sindico_autenticado)):
     return rota_listar_fila(sindico)
 
+from lib.aprovar_lote import listar_para_aprovacao, aprovar_lote, desfazer_lote
+
+@app.get("/ocorrencias/para-aprovacao")
+def rota_para_aprovacao(sindico=Depends(sindico_autenticado)):
+    conn = conectar()
+    try:
+        return {"ok": True, "ocorrencias": listar_para_aprovacao(conn, sindico["id"])}
+    finally:
+        conn.close()
+
+@app.post("/ocorrencias/aprovar-lote")
+def rota_aprovar_lote(payload: dict, sindico=Depends(sindico_autenticado)):
+    conn = conectar()
+    try:
+        return aprovar_lote(conn, payload.get("ids", []), sindico["id"])
+    finally:
+        conn.close()
+
+@app.post("/ocorrencias/desfazer-lote")
+def rota_desfazer_lote(payload: dict, sindico=Depends(sindico_autenticado)):
+    conn = conectar()
+    try:
+        return desfazer_lote(conn, payload.get("ids", []), sindico["id"])
+    finally:
+        conn.close()
 
 # Detalhe
 @app.get("/ocorrencias/{id}")
