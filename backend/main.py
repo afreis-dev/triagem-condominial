@@ -184,7 +184,7 @@ def colar(body: ColarBody, sindico=Depends(sindico_com_csrf)):
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=403, detail="Condomínio fora da sua carteira")
 
-        resultado = salvar_ocorrencia(dados, conn)
+        resultado = salvar_ocorrencia(dados, conn, confirmar=True)
     if not resultado["ok"]:
         raise HTTPException(status_code=422, detail=resultado["erros"])
     return resultado
@@ -435,6 +435,7 @@ def criar_ocorrencia_form(identificador: str, body: OcorrenciaFormBody):
         resultado = salvar_ocorrencia(
             {**dados, "condominioId": condominio_id, "origem": body.perfil},
             conexao=conexao,
+            confirmar=True,
         )
     if not resultado["ok"]:
         return JSONResponse(content=resultado)

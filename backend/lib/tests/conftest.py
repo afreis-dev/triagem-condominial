@@ -72,6 +72,25 @@ def condominio(conexao, sindico):
 
 
 @pytest.fixture
+def contar_confirmadas(conexao):
+    """Conta as ocorrências por outra conexão, que só enxerga o que já foi confirmado no banco."""
+    with conexao.cursor() as cur:
+        cur.execute("SELECT current_schema()")
+        esquema = cur.fetchone()[0]
+    conexao.commit()
+    outra = psycopg2.connect(os.environ["TEST_DATABASE_URL"])
+    outra.autocommit = True
+
+    def contar():
+        with outra.cursor() as cur:
+            cur.execute(f"SELECT count(*) FROM {esquema}.ocorrencias")
+            return cur.fetchone()[0]
+
+    yield contar
+    outra.close()
+
+
+@pytest.fixture
 def criar_ocorrencia(conexao, condominio):
     def criar(status="nova", travada=False):
         with conexao.cursor() as cur:

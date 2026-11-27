@@ -29,7 +29,9 @@ Grava uma ocorrência nova, gera o protocolo e devolve o resultado. Serve ao for
 3. Chama `classificar(descricao)` e guarda o resultado na ocorrência.
 4. Chama `registrarDecisao` com o registro de `entrada`.
 
-A ocorrência é gravada antes de classificar. Se a classificação falhar, ela continua gravada e aparece na fila com o motivo `não classificada, revisar`.
+Com conexão própria ou com `confirmar=True`, a ocorrência é confirmada no banco antes de classificar. As rotas do formulário e da mensagem colada usam `confirmar=True`. Sem ele, quem passou a conexão é quem confirma.
+
+Se a classificação falhar, a ocorrência continua gravada e aparece na fila com o motivo `não classificada, revisar`. Com palavra de risco no texto, a trava vale mesmo assim (ver "Falha da IA").
 
 ### Protocolo
 
@@ -113,6 +115,7 @@ Recebe o texto da ocorrência e devolve prioridade, categoria, responsável suge
 - A ocorrência é gravada antes de ser classificada (`salvarOcorrencia`), então nenhuma falha da classificação a perde.
 - A IA tem 10 segundos. Se ela não responder nesse prazo, der erro ou responder algo inválido, a classificação não espera mais e usa as regras do PO, com `fonte` `regras`.
 - Se a IA e as regras falharem, a ocorrência fica gravada sem prioridade, categoria e responsável, com o motivo `não classificada, revisar` e `fonte` `null`. O cartão vem assim em `listarFila`. Colocá-lo no topo da fila é com a ordenação da fila.
+- Mesmo com essa falha, a trava de risco vale. Com palavra de risco na descrição, a ocorrência fica com prioridade `urgente`, `travada` `true`, responsável `sindico`, motivo `palavra de risco: <palavra>` e `fonte` `regras`. A categoria continua `null`. O registro de `entrada` leva `prioridadeSugerida` `urgente`. Só se a própria trava falhar a ocorrência fica sem prioridade.
 
 ### Configuração da IA
 
@@ -160,7 +163,7 @@ Campos de cada tipo:
 
 | Tipo | Quando | Obrigatórios | Opcionais |
 |---|---|---|---|
-| entrada | A ocorrência é gravada | origem | prioridadeSugerida. Fica vazia se a classificação falhou |
+| entrada | A ocorrência é gravada | origem | prioridadeSugerida. Fica vazia se a classificação falhou e o texto não tem palavra de risco |
 | prioridade_confirmada | O síndico confirma a prioridade | prioridadeSugerida, prioridadeFinal | |
 | prioridade_alterada | O síndico muda a prioridade | prioridadeSugerida, prioridadeFinal, motivo | |
 | acao | O síndico escolhe delegar, agendar ou eu mesmo cuido | acao. Mais responsavel se `delegar`, dataAgendada se `agendar` | nota |
@@ -292,8 +295,8 @@ Busca no banco as ocorrências de todos os condomínios, com os campos que o car
 | id, protocolo, condominioId, origem, status | Os mesmos de `salvarOcorrencia` e `concluirOcorrencia` |
 | condominio | Nome do condomínio |
 | descricao | Texto completo. O título do cartão é o início dela |
-| prioridade, categoria, responsavelSugerido, motivo, travada | O que `classificar` devolveu. Se a classificação falhou, os três primeiros vêm `null` e o motivo é `não classificada, revisar` |
-| fonte | De onde veio a classificação: `regras` ou `ia`. Vem `null` se a classificação falhou |
+| prioridade, categoria, responsavelSugerido, motivo, travada | O que `classificar` devolveu. Se a classificação falhou, os três primeiros vêm `null` e o motivo é `não classificada, revisar`. Com palavra de risco, vale a trava (ver "Falha da IA") e só a categoria vem `null` |
+| fonte | De onde veio a classificação: `regras` ou `ia`. Vem `null` se a classificação falhou e o texto não tem palavra de risco |
 | criadaEm | Texto ISO 8601 em UTC (`+00:00`). O cartão calcula o "há 2 h" a partir dele |
 | concluidaEm | Data da conclusão em ISO 8601 UTC, ou `null` se ainda não houver data registrada |
 | acao | Última ação que o síndico registrou (`delegar`, `agendar` ou `eu_mesmo`), ou `null`. É a marca de ação do cartão |
