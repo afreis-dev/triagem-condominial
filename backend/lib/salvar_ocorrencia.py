@@ -1,6 +1,6 @@
 import re
 
-from .classificar import classificar
+from .classificar import aplicarTravaDeRisco, classificar
 from .conexao import conectar
 from .dominio import ORIGENS, PRIORIDADES, inteiro, texto
 from .registrar_decisao import registrar_decisao
@@ -99,6 +99,25 @@ def _classificar(descricao):
         return None
 
 
+def _sem_classificacao(descricao):
+    """Sem classificação, a trava de risco ainda vale: com palavra de risco, a ocorrência fica urgente."""
+    try:
+        trava = aplicarTravaDeRisco(descricao, {"travada": False})
+        if not trava["travada"]:
+            return SEM_CLASSIFICACAO
+        return {
+            **SEM_CLASSIFICACAO,
+            "prioridade": trava["prioridade"],
+            "responsavel_sugerido": trava["responsavelSugerido"],
+            "motivo": trava["motivo"],
+            "travada": True,
+            "palavra_de_risco": trava["palavraDeRisco"],
+            "fonte": trava["fonte"],
+        }
+    except Exception:
+        return SEM_CLASSIFICACAO
+
+
 def _guardar_e_registrar(conexao, ocorrencia_id, origem, classificacao):
     """Guarda a classificação e registra a entrada. Se algo falhar, desfaz só esta etapa e levanta o erro."""
     with conexao.cursor() as cur:
@@ -123,7 +142,7 @@ def _guardar_e_registrar(conexao, ocorrencia_id, origem, classificacao):
         cur.execute("RELEASE SAVEPOINT guardar_classificacao")
 
 
-def _salvar(conexao, erros, valores, proprio):
+def _salvar(conexao, erros, valores, confirmar):
     """Confere o condomínio, grava a ocorrência, guarda a classificação e registra a entrada."""
     with conexao.cursor() as cur:
         cur.execute("SELECT 1 FROM condominios WHERE id = %s", (valores["condominio_id"],))
@@ -135,21 +154,22 @@ def _salvar(conexao, erros, valores, proprio):
         ocorrencia_id = cur.fetchone()[0]
         protocolo = f"TS-{ocorrencia_id:06d}"
         cur.execute(INSERIR, {**valores, "id": ocorrencia_id, "protocolo": protocolo})
-    if proprio:
+    if confirmar:
         conexao.commit()
 
-    classificacao = _classificar(valores["descricao"]) or SEM_CLASSIFICACAO
+    descricao, origem = valores["descricao"], valores["origem"]
+    classificacao = _classificar(descricao) or _sem_classificacao(descricao)
     try:
-        _guardar_e_registrar(conexao, ocorrencia_id, valores["origem"], classificacao)
+        _guardar_e_registrar(conexao, ocorrencia_id, origem, classificacao)
     except Exception:
-        _guardar_e_registrar(conexao, ocorrencia_id, valores["origem"], SEM_CLASSIFICACAO)
-    if proprio:
+        _guardar_e_registrar(conexao, ocorrencia_id, origem, _sem_classificacao(descricao))
+    if confirmar:
         conexao.commit()
     return {"ok": True, "ocorrenciaId": ocorrencia_id, "protocolo": protocolo}
 
 
-def salvar_ocorrencia(dados, conexao=None):
-    """Valida e grava a ocorrência, classifica o texto e registra a entrada. Com conexão própria, confirma sozinha."""
+def salvar_ocorrencia(dados, conexao=None, confirmar=False):
+    """Valida, grava, classifica e registra a entrada. Com conexão própria ou confirmar=True, grava antes de classificar."""
     erros, valores = _validar(dados if isinstance(dados, dict) else {})
     if valores["condominio_id"] is None:
         return {"ok": False, "erros": erros}
@@ -157,7 +177,7 @@ def salvar_ocorrencia(dados, conexao=None):
     if proprio:
         conexao = conectar()
     try:
-        return _salvar(conexao, erros, valores, proprio)
+        return _salvar(conexao, erros, valores, confirmar or proprio)
     except Exception:
         if proprio:
             conexao.rollback()

@@ -238,3 +238,51 @@ def test_ocorrencia_e_gravada_antes_de_classificar(conexao, condominio, monkeypa
     monkeypatch.setattr(modulo, "classificar", espiar)
     salvar_ocorrencia(formulario(condominio), conexao=conexao)
     assert vistas == [1]
+
+
+@pytest.mark.parametrize("confirmar, visiveis", [(True, 1), (False, 0)])
+def test_com_confirmar_a_ocorrencia_ja_esta_no_banco_quando_classifica(
+    conexao, condominio, contar_confirmadas, monkeypatch, confirmar, visiveis
+):
+    vistas = []
+
+    def espiar(texto):
+        vistas.append(contar_confirmadas())
+        return CLASSIFICACAO
+
+    monkeypatch.setattr(modulo, "classificar", espiar)
+    salvar_ocorrencia(formulario(condominio), conexao=conexao, confirmar=confirmar)
+    assert vistas == [visiveis]
+
+
+@pytest.mark.parametrize(
+    "classificar",
+    [classificacao_que_falha, lambda texto: {}, lambda texto: None, lambda texto: {**CLASSIFICACAO, "prioridade": "critica"}],
+)
+def test_palavra_de_risco_trava_mesmo_se_a_classificacao_falhar(conexao, condominio, monkeypatch, classificar):
+    monkeypatch.setattr(modulo, "classificar", classificar)
+    salvar_ocorrencia(formulario(condominio, descricao="tem cheiro de gás no bloco B"), conexao=conexao)
+    assert linha(
+        conexao,
+        "SELECT prioridade, categoria, responsavel_sugerido, motivo, travada, palavra_de_risco, fonte FROM ocorrencias",
+    ) == ("urgente", None, "sindico", "palavra de risco: gás", True, "gás", "regras")
+    assert linha(conexao, "SELECT tipo, prioridade_sugerida FROM registros_decisao") == ("entrada", "urgente")
+
+
+def test_palavra_de_risco_trava_mesmo_se_o_banco_recusar_a_classificacao(conexao, condominio, monkeypatch):
+    monkeypatch.setattr(modulo, "classificar", lambda texto: {**CLASSIFICACAO, "motivo": "a\x00b"})
+    salvar_ocorrencia(formulario(condominio, descricao="tem fumaça no corredor"), conexao=conexao)
+    assert linha(conexao, "SELECT prioridade, motivo, travada, palavra_de_risco FROM ocorrencias") == (
+        "urgente", "palavra de risco: fumaça", True, "fumaça",
+    )
+    assert contar(conexao, "registros_decisao") == 1
+
+
+def test_se_a_trava_tambem_falhar_fica_nao_classificada(conexao, condominio, monkeypatch):
+    monkeypatch.setattr(modulo, "classificar", classificacao_que_falha)
+    monkeypatch.setattr(modulo, "aplicarTravaDeRisco", lambda texto, resultado: classificacao_que_falha(texto))
+    resposta = salvar_ocorrencia(formulario(condominio, descricao="tem cheiro de gás"), conexao=conexao)
+    assert resposta["ok"] is True
+    assert linha(conexao, "SELECT prioridade, motivo, travada FROM ocorrencias") == (
+        None, "não classificada, revisar", False,
+    )
