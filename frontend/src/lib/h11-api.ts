@@ -2,6 +2,15 @@ import { z } from "zod";
 import { requisitarAutenticado } from "./auth";
 import type { TipoDecisao } from "./ocorrencias";
 
+const papelResponsavelSchema = z.string().trim().min(1);
+
+export const contatoResponsavelSchema = z.discriminatedUnion("temCelular", [
+  z.object({ papel: papelResponsavelSchema, temCelular: z.literal(true), celular: z.string().trim().min(1) }),
+  z.object({ papel: papelResponsavelSchema, temCelular: z.literal(false), celular: z.null() }),
+]);
+
+export type ContatoResponsavel = z.infer<typeof contatoResponsavelSchema>;
+
 async function requisitar(caminho: string, init: RequestInit = {}) {
   const resposta = await requisitarAutenticado(caminho, { ...init, cache: "no-store" });
   const dados: unknown = await resposta.json();
@@ -25,7 +34,7 @@ export async function registrarAcao(
   responsavel?: string,
   dataAgendada?: string,
 ) {
-  await requisitar(`/ocorrencias/${encodeURIComponent(id)}/acoes`, {
+  const dados = await requisitar(`/ocorrencias/${encodeURIComponent(id)}/acoes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -35,4 +44,7 @@ export async function registrarAcao(
       dataAgendada: acao === "agendar" ? dataAgendada : undefined,
     }),
   });
+  // Uma resposta sem contato ainda indica que a decisão foi registrada.
+  const retorno = z.object({ contatoResponsavel: contatoResponsavelSchema.nullish() }).safeParse(dados);
+  return retorno.success ? retorno.data.contatoResponsavel : undefined;
 }

@@ -21,7 +21,7 @@ import {
   type TipoDecisao,
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia } from "@/lib/ocorrencias-store";
-import { buscarResponsaveis, registrarAcao } from "@/lib/h11-api";
+import { buscarResponsaveis, registrarAcao, type ContatoResponsavel } from "@/lib/h11-api";
 import { cn } from "@/lib/utils";
 import { ErroCampo, Secao, campoErro } from "./Secao";
 
@@ -40,7 +40,7 @@ function paraData(iso: string): Date {
 
 type PropsDecisao =
   | { ocorrencia: Ocorrencia; idReal?: never; aoRegistrar?: never }
-  | { ocorrencia?: never; idReal: string; aoRegistrar: () => void };
+  | { ocorrencia?: never; idReal: string; aoRegistrar: (tipo: TipoDecisao, contato?: ContatoResponsavel | null) => void };
 
 export function DecisaoSecao({ ocorrencia, idReal, aoRegistrar }: PropsDecisao) {
   const [tipo, setTipo] = useState<TipoDecisao | undefined>(undefined);
@@ -89,9 +89,9 @@ export function DecisaoSecao({ ocorrencia, idReal, aoRegistrar }: PropsDecisao) 
     if (idReal) {
       setEnviando(true);
       try {
-        await registrarAcao(idReal, tipo, nota, responsavel, data);
+        const contato = await registrarAcao(idReal, tipo, nota, responsavel, data);
         toast.success("Decisão registrada");
-        aoRegistrar();
+        aoRegistrar(tipo, contato);
       } catch (erro) {
         setErroEnvio(erro instanceof Error ? erro.message : "Não foi possível registrar a decisão.");
       } finally {
