@@ -1,4 +1,6 @@
 import os
+import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -41,3 +43,11 @@ def validar_token(token: str) -> int:
         return int(payload["sub"])
     except (jwt.InvalidTokenError, ValueError, KeyError, TypeError):
         raise HTTPException(status_code=401, detail="Sessão inválida ou expirada")
+
+
+def token_csrf(token: str) -> str:
+    """Deriva um token CSRF vinculado ao JWT sem expor o segredo no navegador."""
+    segredo = os.getenv("JWT_SECRET")
+    if not segredo:
+        raise RuntimeError("JWT_SECRET não configurado")
+    return hmac.new(segredo.encode(), token.encode(), hashlib.sha256).hexdigest()

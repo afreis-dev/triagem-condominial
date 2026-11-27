@@ -4,8 +4,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ColarMensagemDialog } from "./ColarMensagemDialog";
 
 vi.mock("@/lib/auth", () => ({
-  API_URL: "http://localhost:8000",
-  obterToken: () => "token-de-teste",
+  requisitarAutenticado: (caminho: string, init: RequestInit = {}) => fetch(
+    `http://localhost:8000${caminho}`,
+    { ...init, credentials: "include", headers: new Headers(init.headers) },
+  ),
 }));
 
 afterEach(() => {
@@ -43,6 +45,7 @@ it("saves the pasted message unchanged for a condominium returned by the API", a
     "http://localhost:8000/ocorrencias/colar",
     expect.objectContaining({
       method: "POST",
+      credentials: "include",
       body: JSON.stringify({ condominioId: 7, descricao, nome: "", celular: "(11) 91234-5678", origem: "whatsapp_sindico" }),
     }),
   );

@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGuard } from "@/components/AuthGuard";
+import { MenuSindico } from "@/components/MenuSindico";
 import { ColarMensagemDialog } from "@/components/fila/ColarMensagemDialog";
 import { CartaoOcorrencia } from "@/components/fila/CartaoOcorrencia";
 import { EmptyState } from "@/components/fila/EmptyState";
@@ -10,9 +11,7 @@ import { FilterBar } from "@/components/fila/FilterBar";
 import { Paginacao } from "@/components/fila/Paginacao";
 import { PrioritySummary } from "@/components/fila/PrioritySummary";
 import { Button } from "@/components/ui/button";
-import { sair } from "@/lib/auth";
 import {
-  CONDOMINIOS,
   PRIORIDADES,
   STATUS,
   contarPorPrioridade,
@@ -22,9 +21,7 @@ import {
   type Status,
 } from "@/lib/ocorrencias";
 import { useFilaApi } from "@/lib/fila-api";
-import { useOcorrencias } from "@/lib/ocorrencias-store";
 import { cn } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
 
 interface FilaSearch {
   aba?: Status | undefined;
@@ -75,11 +72,9 @@ function FilaPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const fila = useFilaApi();
-  const ocorrenciasDemo = useOcorrencias();
-  const demonstracao = fila.isError && !fila.data;
-  const todas = fila.data ?? ocorrenciasDemo;
+  const todas = useMemo(() => fila.data ?? [], [fila.data]);
   const condominios = useMemo(() => {
-    if (!fila.data) return CONDOMINIOS;
+    if (!fila.data) return [];
     const nomes = new Map(fila.data.map((o) => [o.condominioId, o.condominioNome ?? o.condominioId]));
     return Array.from(nomes, ([id, nome]) => ({ id, nome }));
   }, [fila.data]);
@@ -107,30 +102,11 @@ function FilaPage() {
   const abaInfo = STATUS.find((s) => s.id === aba)!;
   const filtrosAtivos = Boolean(condominio || prioridade);
   const limpar = () => set({ condominio: undefined, prioridade: undefined });
-  const queryClient = useQueryClient();
 
   function atualizarAposSalvar() {
     void fila.refetch();
     void navigate({ search: { aba: "nova" }, replace: true });
     toast.success("Ocorrência criada");
-  }
-
-  if (fila.error?.message === "Sessão inválida ou expirada") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-        <p>Sua sessão expirou.</p>
-        <button
-          type="button"
-          onClick={() => {
-            sair();
-            queryClient.clear();
-            navigate({ to: "/login" });
-          }}
-        >
-          Entrar novamente
-        </button>
-      </div>
-    );
   }
 
   return (
@@ -145,18 +121,8 @@ function FilaPage() {
               <h1 className="truncate text-lg font-semibold leading-tight">Fila de ocorrências</h1>
             </div>
           <div className="flex items-center gap-2">
-            {!demonstracao && <ColarMensagemDialog aoSalvar={atualizarAposSalvar} />}
-            <button
-              type="button"
-              onClick={() => {
-                sair();
-                queryClient.clear();
-                navigate({ to: "/login" });
-              }}
-              className="rounded-md border px-3 py-2 text-sm font-medium"
-            >
-              Sair
-            </button>
+            <ColarMensagemDialog aoSalvar={atualizarAposSalvar} />
+            <MenuSindico />
           </div>
           </div>
           <nav role="tablist" aria-label="Status" className="-mb-px mt-3 flex">
@@ -207,7 +173,6 @@ function FilaPage() {
         {fila.isError && (
           <p role="status">
             {fila.error.message}
-            {demonstracao && " Exibindo dados de demonstração."}
           </p>
         )}
         <FilterBar
@@ -219,7 +184,7 @@ function FilaPage() {
           onLimpar={limpar}
         />
 
-        {!fila.isPending && (lista.length === 0 ? (
+        {!fila.isPending && !fila.isError && (lista.length === 0 ? (
           <EmptyState titulo={abaInfo.vazio} filtrosAtivos={filtrosAtivos} onLimpar={limpar} />
         ) : (
           <>
@@ -230,7 +195,7 @@ function FilaPage() {
             <ul className="grid gap-2.5 lg:grid-cols-2 lg:gap-3">
               {itens.map((o) => (
                 <li key={o.id}>
-                  <CartaoOcorrencia ocorrencia={o} demonstracao={demonstracao} />
+                  <CartaoOcorrencia ocorrencia={o} demonstracao={false} />
                 </li>
               ))}
             </ul>

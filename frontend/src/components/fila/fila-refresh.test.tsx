@@ -7,6 +7,7 @@ import { Route } from "@/routes/fila";
 vi.mock("@/components/AuthGuard", () => ({
   AuthGuard: ({ children }: { children: ReactNode }) => children,
 }));
+vi.mock("@/components/MenuSindico", () => ({ MenuSindico: () => <button>Sair</button> }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...await importOriginal<typeof import("@tanstack/react-router")>(),
@@ -14,9 +15,10 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 }));
 
 vi.mock("@/lib/auth", () => ({
-  API_URL: "http://localhost:8000",
-  obterToken: () => "token-de-teste",
-  sair: vi.fn(),
+  requisitarAutenticado: (caminho: string, init: RequestInit = {}) => fetch(
+    `http://localhost:8000${caminho}`,
+    { ...init, credentials: "include", headers: new Headers(init.headers) },
+  ),
 }));
 
 afterEach(() => {

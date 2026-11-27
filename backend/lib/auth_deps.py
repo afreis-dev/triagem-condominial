@@ -1,22 +1,32 @@
 
 from contextlib import closing
 
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import hmac
 
-from .auth import validar_token
+from fastapi import Depends, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
+
+from .auth import token_csrf, validar_token
 from .conexao import conectar
 
-seguranca = HTTPBearer(auto_error=False)
+COOKIE_SESSAO = "triagem_sessao"
+csrf_header = APIKeyHeader(
+    name="X-CSRF-Token",
+    scheme_name="CSRF",
+    description="Após o login, copie csrfToken de GET /auth/me para autorizar alterações.",
+    auto_error=False,
+)
 
 
 def sindico_autenticado(
-    credenciais: HTTPAuthorizationCredentials | None = Depends(seguranca),
+    request: Request,
 ):
-    if credenciais is None:
+    token = request.cookies.get(COOKIE_SESSAO)
+    if not token:
         raise HTTPException(status_code=401, detail="Autenticação necessária")
 
-    sindico_id = validar_token(credenciais.credentials)
+    sindico_id = validar_token(token)
+    request.state.csrf_token = token_csrf(token)
 
     with closing(conectar()) as conexao:
         with conexao.cursor() as cursor:
@@ -34,6 +44,17 @@ def sindico_autenticado(
         "nome": sindico[1],
         "email": sindico[2],
     }
+
+
+def sindico_com_csrf(
+    request: Request,
+    recebido: str | None = Security(csrf_header),
+    sindico=Depends(sindico_autenticado),
+):
+    recebido = recebido or ""
+    if not hmac.compare_digest(recebido, request.state.csrf_token):
+        raise HTTPException(status_code=403, detail="Verificação de segurança inválida")
+    return sindico
 
 
 def verificar_acesso_ocorrencia(cursor, ocorrencia_id: int, sindico_id: int):

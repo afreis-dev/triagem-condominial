@@ -5,8 +5,10 @@ import { OCORRENCIAS } from "@/lib/ocorrencias";
 import { PrioridadeSecao } from "./PrioridadeSecao";
 
 vi.mock("@/lib/auth", () => ({
-  API_URL: "http://localhost:8000",
-  obterToken: () => "token-do-sindico",
+  requisitarAutenticado: (caminho: string, init: RequestInit = {}) => fetch(
+    `http://localhost:8000${caminho}`,
+    { ...init, credentials: "include", headers: new Headers(init.headers) },
+  ),
 }));
 
 afterEach(() => {
@@ -26,7 +28,7 @@ function abrir() {
   return fetchApi;
 }
 
-it("confirma a sugestão urgente com o token e sem enviar motivo", async () => {
+it("confirma a sugestão urgente com cookie e sem enviar motivo", async () => {
   const fetchApi = abrir();
   expect(screen.getAllByRole("radio")).toHaveLength(4);
   expect(screen.getByRole("radio", { name: "Urgente Sugerida" }).getAttribute("aria-checked")).toBe("true");
@@ -34,7 +36,8 @@ it("confirma a sugestão urgente com o token e sem enviar motivo", async () => {
   await waitFor(() => expect(fetchApi).toHaveBeenCalledOnce());
   expect(fetchApi).toHaveBeenCalledWith("http://localhost:8000/ocorrencias/5/prioridade", {
     method: "PATCH",
-    headers: { Authorization: "Bearer token-do-sindico", "Content-Type": "application/json" },
+    credentials: "include",
+    headers: expect.any(Headers),
     body: JSON.stringify({ prioridade: "urgente" }),
   });
 });

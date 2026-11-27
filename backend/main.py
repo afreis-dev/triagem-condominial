@@ -1,9 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import os
 from contextlib import closing
 from datetime import date, timezone
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -15,19 +16,50 @@ from lib.registrar_decisao import buscar_decisoes, registrar_decisao
 from lib.salvar_ocorrencia import salvar_ocorrencia
 from lib.concluir_ocorrencia import concluir_ocorrencia
 from lib.auth import criar_token, verificar_senha
-from lib.auth_deps import sindico_autenticado, verificar_acesso_ocorrencia
+from lib.auth_deps import COOKIE_SESSAO, sindico_autenticado, sindico_com_csrf, verificar_acesso_ocorrencia
 from rotas.fila import rota_listar_fila
 
 app = FastAPI(title="Triagem Condominial")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+ORIGENS_FRONTEND = [
+    origem.strip() for origem in os.getenv(
+        "FRONTEND_ORIGINS",
+        "http://localhost:8080,http://127.0.0.1:8080" if os.getenv("APP_ENV") != "production" else "",
+    ).split(",") if origem.strip()
+]
+COOKIE_SECURE = os.getenv("APP_ENV") == "production"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax").lower()
+if COOKIE_SAMESITE not in {"lax", "strict", "none"} or (COOKIE_SAMESITE == "none" and not COOKIE_SECURE):
+    raise RuntimeError("COOKIE_SAMESITE inválido para o ambiente")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ORIGENS_FRONTEND,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "X-Requested-With"],
+)
+
+
+def verificar_origem(request: Request):
+    origem = request.headers.get("origin")
+    if origem and origem not in ORIGENS_FRONTEND and origem != str(request.base_url).rstrip("/"):
+        raise HTTPException(status_code=403, detail="Origem não autorizada")
 
 class DadosLogin(BaseModel):
-    email: str
+    identificador: str
     senha: str
 
 
 @app.post("/auth/login")
-def login(dados: DadosLogin):
+def login(dados: DadosLogin, request: Request, response: Response):
+    verificar_origem(request)
+    if (request.headers.get("X-Requested-With") != "XMLHttpRequest"
+            and request.headers.get("origin") != str(request.base_url).rstrip("/")):
+        raise HTTPException(status_code=403, detail="Requisição não autorizada")
+    identificador = dados.identificador.strip()
+    celular = "".join(c for c in identificador if c.isdigit())
+    if not identificador or ("@" not in identificador and len(celular) not in {10, 11}):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
     with closing(conectar()) as conexao:
         with conexao.cursor() as cursor:
             cursor.execute(
@@ -35,8 +67,9 @@ def login(dados: DadosLogin):
                 SELECT id, senha_hash
                 FROM sindicos
                 WHERE LOWER(email) = LOWER(%s)
+                   OR (%s <> '' AND regexp_replace(COALESCE(celular, ''), '[^0-9]', '', 'g') = %s)
                 """,
-                (dados.email.strip(),),
+                (identificador, celular if "@" not in identificador else "", celular if "@" not in identificador else ""),
             )
             resultado = cursor.fetchone()
 
@@ -52,15 +85,31 @@ def login(dados: DadosLogin):
             detail="Credenciais inválidas",
         )
 
-    return {
-        "access_token": criar_token(resultado[0]),
-        "token_type": "bearer",
-    }
+    response.set_cookie(
+        key=COOKIE_SESSAO,
+        value=criar_token(resultado[0]),
+        max_age=8 * 60 * 60,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return {"ok": True}
 
 
 @app.get("/auth/me")
-def consultar_perfil(sindico=Depends(sindico_autenticado)):
-    return sindico
+def consultar_perfil(request: Request, response: Response, sindico=Depends(sindico_autenticado)):
+    response.headers["Cache-Control"] = "no-store"
+    return {**sindico, "csrfToken": request.state.csrf_token}
+
+
+@app.post("/auth/logout")
+def logout(request: Request, response: Response, sindico=Depends(sindico_com_csrf)):
+    verificar_origem(request)
+    response.delete_cookie(COOKIE_SESSAO, path="/", secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE)
+    response.headers["Cache-Control"] = "no-store"
+    return {"ok": True}
 
 
 class ColarBody(BaseModel):
@@ -120,7 +169,7 @@ def listar_condominios_da_carteira(sindico=Depends(sindico_autenticado)):
 
 
 @app.post("/ocorrencias/colar", status_code=201)
-def colar(body: ColarBody, sindico=Depends(sindico_autenticado)):
+def colar(body: ColarBody, sindico=Depends(sindico_com_csrf)):
     dados = {
         "origem": "whatsapp_sindico",
         "condominioId": body.condominioId,
@@ -180,7 +229,7 @@ def listar_decisoes(id: int, sindico=Depends(sindico_autenticado)):
 # Endpoint - H13
 @app.patch("/api/ocorrencias/{id}/concluir")
 @app.patch("/ocorrencias/{id}/concluir")
-def concluir(id: int, sindico=Depends(sindico_autenticado)):
+def concluir(id: int, sindico=Depends(sindico_com_csrf)):
     with closing(conectar()) as conn, conn:
         with conn.cursor() as cursor:
             verificar_acesso_ocorrencia(cursor, id, sindico["id"])
@@ -244,7 +293,7 @@ def listar_responsaveis_ocorrencia(
 def confirmar_acao(
     id: int,
     decisao: DecisaoAcao,
-    sindico=Depends(sindico_autenticado),
+    sindico=Depends(sindico_com_csrf),
 ):
     if decisao.acao == "agendar" and decisao.dataAgendada is None:
         raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
@@ -271,7 +320,7 @@ def confirmar_acao(
 
 # H10
 @app.patch("/ocorrencias/{id}/prioridade")
-def alterar_prioridade(id: int, body: PrioridadeBody, sindico=Depends(sindico_autenticado)):
+def alterar_prioridade(id: int, body: PrioridadeBody, sindico=Depends(sindico_com_csrf)):
     with closing(conectar()) as conn, conn, conn.cursor() as cursor:
         ocorrencia = _ocorrencia_da_carteira(cursor, id, sindico["id"], bloquear=True)
         if ocorrencia["status"] == "concluida":

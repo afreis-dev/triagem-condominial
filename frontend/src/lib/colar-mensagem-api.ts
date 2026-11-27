@@ -1,4 +1,4 @@
-import { API_URL, obterToken } from "./auth";
+import { requisitarAutenticado } from "./auth";
 
 export interface MensagemColada {
   condominioId: number;
@@ -8,11 +8,7 @@ export interface MensagemColada {
 }
 
 async function requisitar(caminho: string, init: RequestInit = {}) {
-  const token = obterToken();
-  if (!token) throw new Error("Entre novamente para registrar uma ocorrência.");
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  return fetch(`${API_URL}${caminho}`, { ...init, headers });
+  return requisitarAutenticado(caminho, init);
 }
 
 export async function buscarCondominiosDaCarteira(signal: AbortSignal) {

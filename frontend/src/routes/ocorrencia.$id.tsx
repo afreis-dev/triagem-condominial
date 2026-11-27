@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGuard } from "@/components/AuthGuard";
+import { MenuSindico } from "@/components/MenuSindico";
 import { DecisaoSecao } from "@/components/ocorrencia/DecisaoSecao";
 import { Historico } from "@/components/ocorrencia/Historico";
 import { PrioridadeSecao } from "@/components/ocorrencia/PrioridadeSecao";
@@ -131,6 +132,7 @@ function OcorrenciaPage() {
               {conclusao.isPending ? "Concluindo…" : "Concluir"}
             </Button>
           )}
+          <MenuSindico />
         </div>
       </header>
 
