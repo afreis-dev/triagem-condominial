@@ -25,7 +25,6 @@ class DadosLogin(BaseModel):
     email: str
     senha: str
 
-
 @app.post("/auth/login")
 def login(dados: DadosLogin):
     with closing(conectar()) as conexao:
@@ -57,11 +56,9 @@ def login(dados: DadosLogin):
         "token_type": "bearer",
     }
 
-
 @app.get("/auth/me")
 def consultar_perfil(sindico=Depends(sindico_autenticado)):
     return sindico
-
 
 class ColarBody(BaseModel):
     condominioId: int
@@ -117,7 +114,6 @@ def listar_condominios_da_carteira(sindico=Depends(sindico_autenticado)):
             (sindico["id"],),
         )
         return [{"id": id_, "nome": nome} for id_, nome in cursor.fetchall()]
-
 
 @app.post("/ocorrencias/colar", status_code=201)
 def colar(body: ColarBody, sindico=Depends(sindico_autenticado)):
@@ -201,7 +197,6 @@ def listar_decisoes(id: int, sindico=Depends(sindico_autenticado)):
 
         return buscar_decisoes(id, conn)
 
-
 # Endpoint - H13
 @app.patch("/api/ocorrencias/{id}/concluir")
 @app.patch("/ocorrencias/{id}/concluir")
@@ -218,14 +213,11 @@ def concluir(id: int, sindico=Depends(sindico_autenticado)):
     codigo = 404 if "ocorrenciaId" in resultado["erros"] else 409
     return JSONResponse(content=resultado, status_code=codigo)
 
-
-
 class DecisaoAcao(BaseModel):
     acao: Literal["delegar", "agendar", "eu_mesmo"]
     responsavel: str | None = None
     dataAgendada: date | None = None
     nota: str = Field(default="", max_length=500)
-
 
 def _consultar_ocorrencia_acao(cursor, id: int, *, bloquear: bool = False):
     consulta = """
@@ -240,7 +232,6 @@ def _consultar_ocorrencia_acao(cursor, id: int, *, bloquear: bool = False):
         raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
     return ocorrencia
 
-
 def _papeis_delegaveis(cursor, condominio_id):
     cursor.execute(
         "SELECT papel FROM responsaveis WHERE condominio_id = %s ORDER BY papel",
@@ -248,22 +239,22 @@ def _papeis_delegaveis(cursor, condominio_id):
     )
     return [papel for (papel,) in cursor.fetchall()]
 
-
-
 @app.get("/ocorrencias/{id}/responsaveis")
 def listar_responsaveis_ocorrencia(
     id: int,
     sindico=Depends(sindico_autenticado),
 ):
-    with closing(conectar()) as conn, conn.cursor() as cursor:
-        verificar_acesso_ocorrencia(cursor, id, sindico["id"])
-        condominio_id, sugerido, _ = _consultar_ocorrencia_acao(cursor, id)
-        papeis = _papeis_delegaveis(cursor, condominio_id)
+    with closing(conectar()) as conn:
+        with conn.cursor() as cursor:
+            verificar_acesso_ocorrencia(cursor, id, sindico["id"])
+
+        with conn.cursor() as cursor:
+            condominio_id, sugerido, _ = _consultar_ocorrencia_acao(cursor, id)
+            papeis = _papeis_delegaveis(cursor, condominio_id)
     return {
         "responsaveis": papeis,
         "responsavelSugerido": sugerido if sugerido in papeis else None,
     }
-
 
 @app.post("/ocorrencias/{id}/acoes", status_code=201)
 def confirmar_acao(
@@ -274,25 +265,63 @@ def confirmar_acao(
     if decisao.acao == "agendar" and decisao.dataAgendada is None:
         raise HTTPException(status_code=422, detail="Escolha a data do agendamento")
 
-    with closing(conectar()) as conn, conn, conn.cursor() as cursor:
-        verificar_acesso_ocorrencia(cursor, id, sindico["id"])
-        condominio_id, _, status = _consultar_ocorrencia_acao(cursor, id, bloquear=True)
-        if status != "nova":
-            raise HTTPException(status_code=409, detail="A ocorrência precisa estar em Nova")
-        if decisao.acao == "delegar" and decisao.responsavel not in _papeis_delegaveis(cursor, condominio_id):
-            raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio")
+    with closing(conectar()) as conn, conn:
+        with conn.cursor() as cursor:
+            verificar_acesso_ocorrencia(cursor, id, sindico["id"])
 
-        resultado = registrar_decisao(
-            {"tipo": "acao", "ocorrenciaId": id, "quemDecidiu": "sindico", **decisao.model_dump(mode="json")},
-            conexao=conn,
-        )
-        if not resultado["ok"]:
-            raise HTTPException(status_code=422, detail=resultado["erros"])
-        cursor.execute("UPDATE ocorrencias SET status = 'em_andamento' WHERE id = %s", (id,))
+        with conn.cursor() as cursor:
+            condominio_id, _, status = _consultar_ocorrencia_acao(cursor, id, bloquear=True)
+            if status != "nova":
+                raise HTTPException(status_code=409, detail="A ocorrência precisa estar em Nova")
+            if decisao.acao == "delegar" and decisao.responsavel not in _papeis_delegaveis(cursor, condominio_id):
+                raise HTTPException(status_code=422, detail="Escolha um responsável do condomínio")
+
+            resultado = registrar_decisao(
+                {"tipo": "acao", "ocorrenciaId": id, "quemDecidiu": "sindico", **decisao.model_dump(mode="json")},
+                conexao=conn,
+            )
+            if not resultado["ok"]:
+                raise HTTPException(status_code=422, detail=resultado["erros"])
+            cursor.execute("UPDATE ocorrencias SET status = 'em_andamento' WHERE id = %s", (id,))
+
+            # H12: dentro do mesmo cursor, ainda aberto
+            contato = None
+            if decisao.acao == "delegar" and decisao.responsavel:
+                papel = decisao.responsavel
+                if papel in ("zelador", "portaria"):
+                    cursor.execute(
+                        "SELECT nome, celular FROM responsaveis WHERE condominio_id = %s AND papel = %s",
+                        (condominio_id, papel),
+                    )
+                    linha = cursor.fetchone()
+                    nome, celular = linha if linha else (papel, None)
+                elif papel == "sindico":
+                    cursor.execute(
+                        """
+                        SELECT s.nome, s.celular FROM sindicos s
+                        JOIN condominios c ON c.sindico_id = s.id
+                        WHERE c.id = %s
+                        """,
+                        (condominio_id,),
+                    )
+                    linha = cursor.fetchone()
+                    nome, celular = linha if linha else (papel, None)
+                else:
+                    nome, celular = papel, None
+
+                celular_limpo = (celular or "").strip() or None
+                contato = {
+                    "papel": papel,
+                    "nome": nome,
+                    "celular": celular_limpo,
+                    "temCelular": celular_limpo is not None,
+                }
+                if not celular_limpo:
+                    contato["aviso"] = "Responsável sem celular cadastrado"
 
     return {"id": id, "status": "em_andamento",
-            "marcaAcao": marca_acao(decisao.acao, decisao.responsavel, decisao.dataAgendada)}
-
+            "marcaAcao": marca_acao(decisao.acao, decisao.responsavel, decisao.dataAgendada),
+            "contatoResponsavel": contato}
 
 # H10
 @app.patch("/ocorrencias/{id}/prioridade")
@@ -322,7 +351,6 @@ def alterar_prioridade(id: int, body: PrioridadeBody, sindico=Depends(sindico_au
             cursor.execute("UPDATE ocorrencias SET prioridade = %s WHERE id = %s", (body.prioridade, id))
     return {"id": id, "prioridade": body.prioridade}
 
-
 class OcorrenciaFormBody(BaseModel):
     perfil: Literal["morador", "proprietario", "funcionario"]
     nome: Optional[str] = None
@@ -330,7 +358,6 @@ class OcorrenciaFormBody(BaseModel):
     celular: Optional[str] = None
     local: Optional[str] = None
     descricao: str
-
 
 def _buscar_condominio_por_slug(identificador: str, conexao):
     with conexao.cursor() as cursor:
@@ -343,13 +370,11 @@ def _buscar_condominio_por_slug(identificador: str, conexao):
         raise HTTPException(status_code=404, detail="Condomínio não encontrado")
     return condominio
 
-
 @app.get("/api/condominios/{identificador}")
 def get_condominio_api(identificador: str):
     with closing(conectar()) as conexao:
         condominio_id, nome = _buscar_condominio_por_slug(identificador, conexao)
     return {"id": condominio_id, "nome": nome}
-
 
 @app.post("/api/condominios/{identificador}/ocorrencias", status_code=201)
 def criar_ocorrencia_form(identificador: str, body: OcorrenciaFormBody):
