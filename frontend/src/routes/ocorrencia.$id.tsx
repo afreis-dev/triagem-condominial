@@ -72,7 +72,7 @@ function OcorrenciaPage() {
   const ocorrenciasDemo = useOcorrencias();
   const conclusao = useConclusaoApi();
   const queryClient = useQueryClient();
-  const [delegacao, setDelegacao] = useState<{ contato?: ContatoResponsavel | null }>();
+  const [delegacao, setDelegacao] = useState<{ contato?: ContatoResponsavel | null | undefined }>();
   const o = demonstracao ? ocorrenciasDemo.find((x) => `demo-${x.id}` === id) : detalhe.data;
   const historico = useHistoricoApi(Number(id), !demonstracao && Boolean(o));
 
