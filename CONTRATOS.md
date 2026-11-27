@@ -316,7 +316,9 @@ Se o banco não responder, devolve status 503 com `{ "ok": false, "erros": { "ba
 
 `GET /ocorrencias/{id}` retorna o detalhe com protocolo, condomínio, descrição,
 origem, status, dados do relator, local, data de entrada, prioridade atual,
-prioridade sugerida, motivo da classificação, trava e palavra de risco.
+prioridade sugerida, motivo da classificação, trava e palavra de risco. Também
+traz `fonte`, de onde veio a classificação: `ia`, `regras` ou `null` quando não
+houve classificação.
 
 `PATCH /ocorrencias/{id}/prioridade` recebe `prioridade` e `motivo` opcional
 (até 500 caracteres). Registra `prioridade_confirmada` quando a escolha
