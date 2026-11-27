@@ -111,6 +111,16 @@ def test_confirma_sugestao_sem_motivo(cliente, conexao, nova):
     ]
 
 
+@pytest.mark.parametrize("fonte", ["ia", "regras", None])
+def test_detalhe_diz_de_onde_veio_a_classificacao(cliente, conexao, nova, fonte):
+    ocorrencia_id = nova("alta")
+    with conexao, conexao.cursor() as cur:
+        cur.execute("UPDATE ocorrencias SET fonte = %s WHERE id = %s", (fonte, ocorrencia_id))
+    resposta = cliente.get(f"/ocorrencias/{ocorrencia_id}")
+    assert resposta.status_code == 200
+    assert resposta.json()["fonte"] == fonte
+
+
 def test_detalhe_retorna_dados_e_classificacao_da_ocorrencia(cliente, conexao, nova):
     ocorrencia_id = nova("urgente", travada=True, sugerida_pelo_sistema="urgente")
     with conexao, conexao.cursor() as cur:
