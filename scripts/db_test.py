@@ -44,9 +44,12 @@ def aguardar_postgres(url):
 def main():
     load_dotenv()
 
-    database_url = os.getenv("DATABASE_URL")
+    if os.getenv("APP_ENV") != "development":
+        raise RuntimeError("db-test exige APP_ENV=development")
+
+    database_url = os.getenv("DATABASE_URL_DEV")
     if not database_url:
-        raise RuntimeError("DATABASE_URL não foi configurada")
+        raise RuntimeError("DATABASE_URL_DEV não foi configurada")
 
     url = make_url(database_url)
 
@@ -56,7 +59,7 @@ def main():
 
     if url.database != "triagem_db_dev":
         raise RuntimeError(
-            "DATABASE_URL deve apontar para triagem_db_dev"
+            "DATABASE_URL_DEV deve apontar para triagem_db_dev"
         )
 
     nome_teste = f"triagem_test_{uuid.uuid4().hex[:12]}"
@@ -66,6 +69,7 @@ def main():
     )
 
     ambiente = os.environ.copy()
+    ambiente["DATABASE_URL_DEV"] = conexao_teste
     ambiente["DATABASE_URL"] = conexao_teste
     ambiente["TEST_DATABASE_URL"] = conexao_teste
 
