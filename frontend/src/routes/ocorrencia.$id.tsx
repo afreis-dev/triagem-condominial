@@ -25,6 +25,7 @@ import {
   STATUS,
   concluirOcorrencia,
   formatarTelefone,
+  montarLinkAvisoWhatsapp,
   nomeCondominio,
   podeConcluir,
   porQueEstaAqui,
@@ -98,6 +99,15 @@ function OcorrenciaPage() {
   const status = STATUS.find((s) => s.id === o.status)?.label;
   const relator = o.relator;
   const contato = detalhe.data?.contatoResponsavel ?? delegacao?.contato;
+  const linkAvisoWhatsapp = contato?.temCelular
+    ? montarLinkAvisoWhatsapp({
+        celular: contato.celular,
+        condominio: o.condominioNome ?? nomeCondominio(o.condominioId),
+        local: o.local,
+        descricao: o.descricao,
+        protocolo: o.protocolo,
+      })
+    : null;
 
   async function concluir(ocorrencia: Ocorrencia) {
     if (!podeConcluir(ocorrencia) || conclusao.isPending) return;
@@ -249,12 +259,14 @@ function OcorrenciaPage() {
                   )}
                 </div>
               )}
-              {contato?.temCelular ? (
-                <Button type="button" disabled className="disabled:opacity-100">
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12.04 2a9.91 9.91 0 0 0-8.59 14.85L2 22l5.27-1.38A9.96 9.96 0 1 0 12.04 2Zm0 18.24a8.26 8.26 0 0 1-4.21-1.15l-.3-.18-3.13.82.84-3.05-.2-.31a8.28 8.28 0 1 1 7 3.87Zm4.54-6.18c-.25-.12-1.47-.72-1.7-.81-.23-.08-.4-.12-.56.13-.17.24-.65.81-.8.98-.14.16-.29.18-.54.06-.25-.13-1.05-.39-2-1.24-.74-.66-1.24-1.47-1.38-1.72-.15-.25-.02-.38.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.16.04-.31-.02-.44-.06-.12-.56-1.35-.77-1.84-.2-.49-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.23.25-.87.85-.87 2.08 0 1.22.89 2.41 1.02 2.57.12.17 1.75 2.68 4.24 3.75.59.26 1.05.41 1.41.52.6.19 1.14.17 1.57.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.08.15-1.19-.06-.1-.23-.16-.48-.29Z" />
-                  </svg>
-                  Avisar pelo WhatsApp
+              {linkAvisoWhatsapp ? (
+                <Button asChild>
+                  <a href={linkAvisoWhatsapp} target="_blank" rel="noopener noreferrer">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12.04 2a9.91 9.91 0 0 0-8.59 14.85L2 22l5.27-1.38A9.96 9.96 0 1 0 12.04 2Zm0 18.24a8.26 8.26 0 0 1-4.21-1.15l-.3-.18-3.13.82.84-3.05-.2-.31a8.28 8.28 0 1 1 7 3.87Zm4.54-6.18c-.25-.12-1.47-.72-1.7-.81-.23-.08-.4-.12-.56.13-.17.24-.65.81-.8.98-.14.16-.29.18-.54.06-.25-.13-1.05-.39-2-1.24-.74-.66-1.24-1.47-1.38-1.72-.15-.25-.02-.38.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.16.04-.31-.02-.44-.06-.12-.56-1.35-.77-1.84-.2-.49-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.23.25-.87.85-.87 2.08 0 1.22.89 2.41 1.02 2.57.12.17 1.75 2.68 4.24 3.75.59.26 1.05.41 1.41.52.6.19 1.14.17 1.57.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.08.15-1.19-.06-.1-.23-.16-.48-.29Z" />
+                    </svg>
+                    Avisar pelo WhatsApp
+                  </a>
                 </Button>
               ) : (
                 <p role="status" className="text-sm text-muted-foreground">
