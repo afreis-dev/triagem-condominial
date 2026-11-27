@@ -6,8 +6,8 @@ def listar_para_aprovacao(conn, sindico_id):
     """H15: novas não-urgentes, sem travada, só da carteira do síndico."""
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT o.id, o.protocolo, o.descricao, o.status, o.prioridade, 
-            o.responsavel_sugerido, o.motivo
+            SELECT o.id, o.protocolo, o.descricao, o.status, o.prioridade,
+            o.responsavel_sugerido, o.motivo, c.nome
             FROM ocorrencias o
             JOIN condominios c ON c.id = o.condominio_id
             WHERE o.status = 'nova'
@@ -19,7 +19,7 @@ def listar_para_aprovacao(conn, sindico_id):
         linhas = cur.fetchall()
     return [
         {"id": r[0], "protocolo": r[1], "descricao": r[2], "status": r[3], "prioridade": r[4],
-         "responsavel_sugerido": r[5], "motivo": r[6],}
+         "responsavel_sugerido": r[5], "motivo": r[6], "condominio": r[7]}
         for r in linhas
     ]
 
@@ -58,7 +58,7 @@ def aprovar_lote(conn, ids, sindico_id):
                   AND o.status = 'nova'
                   AND o.travada = FALSE
                   AND o.prioridade <> 'urgente'
-                RETURNING o.id, o.prioridade
+                RETURNING o.id, o.prioridade, o.responsavel_sugerido
             """, (ids_int, sindico_id))
             linhas = cur.fetchall()
             if len(linhas) != len(ids_int):
@@ -67,14 +67,14 @@ def aprovar_lote(conn, ids, sindico_id):
                     status_code=409,
                     detail="Algum id não é seu, já foi aprovado, está travado ou é urgente",
                 )
-            for oid, prioridade in linhas:
+            for oid, prioridade, responsavel in linhas:
                 resultado = registrar_decisao(
                     {
                         "tipo": "aprovacao_lote",
                         "ocorrenciaId": oid,
                         "quemDecidiu": "sindico",
                         "prioridadeFinal": prioridade,
-                        "responsavel": "sindico",
+                        "responsavel": responsavel or "sindico",
                     },
                     conexao=conn,
                 )
