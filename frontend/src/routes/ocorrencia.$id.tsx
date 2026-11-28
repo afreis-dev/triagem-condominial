@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { chaveFila, useConclusaoApi, useOcorrenciaApi } from "@/lib/fila-api";
 import type { ContatoResponsavel } from "@/lib/h11-api";
 import {
+  PAPEIS_RESPONSAVEL,
   STATUS,
   concluirOcorrencia,
   formatarTelefone,
@@ -34,12 +35,6 @@ import {
 } from "@/lib/ocorrencias";
 import { atualizarOcorrencia, useOcorrencias } from "@/lib/ocorrencias-store";
 import { useHistoricoApi } from "@/lib/historico-api";
-
-const PAPEIS_RESPONSAVEL = new Map([
-  ["zelador", "Zelador"],
-  ["portaria", "Portaria"],
-  ["sindico", "Síndico"],
-]);
 
 export const Route = createFileRoute("/ocorrencia/$id")({
   head: ({ params }) => ({
@@ -168,6 +163,11 @@ function OcorrenciaPage() {
         </div>
 
         <Secao titulo="Por que está aqui" icone={<Lightbulb className="size-4" />}>
+          {o.fonte && (
+            <p className="mb-2 text-sm font-medium text-muted-foreground">
+              {o.fonte === "ia" ? "Sugerido pelo sistema (IA)" : "Classificado por regras"}
+            </p>
+          )}
           <ul className="grid gap-1.5 text-[15px]">
             {porQueEstaAqui(o).map((r) => (
               <li key={r} className="flex gap-2">

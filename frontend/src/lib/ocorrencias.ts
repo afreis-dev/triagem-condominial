@@ -20,6 +20,21 @@ export interface Relator {
 export type TipoDecisao = "delegar" | "agendar" | "eu_mesmo";
 export type Responsavel = "Zelador" | "Portaria" | "Síndico";
 
+export const PAPEIS_RESPONSAVEL = new Map([
+  ["zelador", "Zelador"],
+  ["portaria", "Portaria"],
+  ["sindico", "Síndico"],
+]);
+
+const CATEGORIAS = {
+  manutencao: "Manutenção",
+  seguranca_acesso: "Segurança e acesso",
+  convivencia: "Convivência",
+  pedido_administrativo: "Pedido administrativo",
+  duvida: "Dúvida",
+  nao_reconhecida: "Não reconhecida",
+};
+
 export interface Decisao {
   tipo: TipoDecisao;
   responsavel?: Responsavel | undefined;
@@ -47,6 +62,9 @@ export interface Ocorrencia {
   prioridade: Prioridade;
   /** Priority the system suggested when the occurrence arrived. */
   prioridadeSugerida: Prioridade;
+  categoria?: keyof typeof CATEGORIAS | null;
+  responsavelSugerido?: string | null;
+  fonte?: "ia" | "regras" | null;
   travada?: boolean;
   palavraDeRisco?: string | null;
   local?: string;
@@ -351,8 +369,27 @@ export function exigeMotivoPrioridade(o: Ocorrencia, nova: Prioridade): boolean 
 
 /** Reasons shown in "Por que está aqui". */
 export function porQueEstaAqui(o: Ocorrencia): string[] {
-  const itens = [`Classificada como ${labelPrioridade(o.prioridadeSugerida)} pelo sistema`];
+  if (o.fonte === "ia") {
+    const motivo = o.motivo.trim();
+    const prioridade = labelPrioridade(o.prioridadeSugerida);
+    const categoria = o.categoria && CATEGORIAS[o.categoria];
+    const responsavel = o.responsavelSugerido && PAPEIS_RESPONSAVEL.get(o.responsavelSugerido);
+    return [
+      /[.!?…]$/.test(motivo) ? motivo : `${motivo}.`,
+      categoria
+        ? `A classificação sugeriu prioridade ${prioridade} na categoria ${categoria}.`
+        : `A classificação sugeriu prioridade ${prioridade}.`,
+      responsavel
+        ? `A sugestão de responsável pelo atendimento é ${responsavel}.`
+        : "A classificação ficou sem sugestão de responsável.",
+    ];
+  }
+
   const palavra = o.palavraDeRisco ?? (o.travada ? palavraDeRisco(o) : null);
+  if (o.fonte === "regras" && o.travada && palavra) {
+    return [`A prioridade sugerida foi Urgente por causa da palavra de risco “${palavra}”.`];
+  }
+  const itens = [`Prioridade sugerida: ${labelPrioridade(o.prioridadeSugerida)}`];
   if (palavra) itens.push(`Palavra de risco encontrada: "${palavra}"`);
   itens.push(o.motivo);
   return itens;
