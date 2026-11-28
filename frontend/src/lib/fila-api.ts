@@ -30,6 +30,7 @@ type CartaoFila = {
   celular?: string | null;
   local?: string | null;
   motivo: string | null;
+  fonte?: Ocorrencia["fonte"];
   criadaEm: string;
   concluidaEm?: string | null;
   marcaAcao?: string | null;
@@ -38,7 +39,6 @@ type CartaoFila = {
 type DetalheOcorrencia = CartaoFila & {
   categoria?: Ocorrencia["categoria"];
   responsavel?: Ocorrencia["responsavelSugerido"];
-  fonte?: Ocorrencia["fonte"];
   contatoResponsavel?: unknown;
 };
 
@@ -55,6 +55,8 @@ function mapearCartao(cartao: CartaoFila): Ocorrencia {
     origem,
     status: cartao.status === "em_andamento" ? "andamento" : cartao.status,
     prioridade,
+    semClassificacao: cartao.prioridade === null,
+    fonte: cartao.fonte ?? null,
     prioridadeSugerida: cartao.prioridadeSugerida ?? prioridade,
     travada: cartao.travada ?? false,
     palavraDeRisco: cartao.palavraDeRisco ?? null,
@@ -72,7 +74,7 @@ function mapearCartao(cartao: CartaoFila): Ocorrencia {
     ...(cartao.concluidaEm ? { concluidaEm: cartao.concluidaEm } : {}),
     ...(cartao.marcaAcao ? { marcaAcao: cartao.marcaAcao } : {}),
     minutosAtras: Math.max(0, Math.floor((Date.now() - Date.parse(cartao.criadaEm)) / 60_000)),
-    motivo: cartao.motivo ?? "Não classificada, revisar",
+    motivo: cartao.prioridade === null ? "não classificada, revisar" : cartao.motivo ?? "Não classificada, revisar",
     historico: [{ quando: cartao.criadaEm, autor: "Sistema", acao: `Recebida via ${origem}` }],
   };
 }
@@ -95,7 +97,6 @@ export function useOcorrenciaApi(id: string, enabled: boolean) {
         ...mapearCartao(dados),
         categoria: dados.categoria ?? null,
         responsavelSugerido: dados.responsavel ?? null,
-        fonte: dados.fonte ?? null,
         contatoResponsavel: contato.success ? contato.data : undefined,
       };
     },

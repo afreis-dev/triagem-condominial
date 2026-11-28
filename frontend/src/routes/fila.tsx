@@ -194,7 +194,7 @@ function FilaPage() {
               {lista.length} {lista.length === 1 ? "ocorrência" : "ocorrências"} · página {pagina} de{" "}
               {totalPaginas}
             </p>
-            <ul className="grid gap-2.5 lg:grid-cols-2 lg:gap-3">
+            <ul className="grid gap-y-2 lg:grid-cols-2 lg:gap-x-3">
               {itens.map((o) => (
                 <li key={o.id}>
                   <CartaoOcorrencia ocorrencia={o} demonstracao={false} />

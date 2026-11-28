@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Route } from "@/routes/fila";
 
@@ -27,7 +27,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("Atualizar exibe uma urgente que chegou depois da abertura da fila", async () => {
+it("Atualizar mostra a fonte das regras e coloca a ocorrência para revisão acima da urgente", async () => {
   vi.spyOn(Route, "useSearch").mockReturnValue({});
   vi.spyOn(Route, "useNavigate").mockReturnValue(vi.fn());
   const fetchMock = vi.fn()
@@ -42,8 +42,20 @@ it("Atualizar exibe uma urgente que chegou depois da abertura da fila", async ()
         origem: "morador",
         status: "nova",
         prioridade: "urgente",
+        fonte: "regras",
         motivo: "Palavra de risco",
         criadaEm: "2026-11-19T10:00:00+00:00",
+      }, {
+        id: 43,
+        condominioId: 7,
+        condominio: "Residencial Aurora",
+        descricao: "Ocorrência para revisão",
+        origem: "morador",
+        status: "nova",
+        prioridade: null,
+        fonte: null,
+        motivo: null,
+        criadaEm: "2026-11-19T10:01:00+00:00",
       }],
     }));
   vi.stubGlobal("fetch", fetchMock);
@@ -60,7 +72,12 @@ it("Atualizar exibe uma urgente que chegou depois da abertura da fila", async ()
 
   fireEvent.click(atualizar);
 
-  expect(await screen.findByText("Cheiro de gás no corredor")).toBeTruthy();
-  expect(screen.getByRole("tab", { name: "Nova 1" })).toBeTruthy();
+  const urgente = (await screen.findByText("Cheiro de gás no corredor")).closest("a")!;
+  const revisao = screen.getByText("Ocorrência para revisão").closest("a")!;
+  expect(within(urgente).getByText("Classificado por regras")).toBeTruthy();
+  expect(within(revisao).getByText(/não classificada, revisar/)).toBeTruthy();
+  expect(within(revisao).queryByText("Normal")).toBeNull();
+  expect(revisao.compareDocumentPosition(urgente) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Nova 2" })).toBeTruthy();
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
