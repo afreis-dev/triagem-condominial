@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { OCORRENCIAS } from "@/lib/ocorrencias";
+import { OCORRENCIAS, type Ocorrencia } from "@/lib/ocorrencias";
 import { useOcorrenciaApi } from "@/lib/fila-api";
 import { Route } from "./ocorrencia.$id";
 
@@ -32,7 +32,7 @@ afterEach(() => {
   vi.mocked(useOcorrenciaApi).mockReset();
 });
 
-function abrirOcorrencia(celular: string | null) {
+function abrirOcorrencia(celular: string | null, dados: Partial<Ocorrencia> = {}) {
   const ocorrencia = {
     ...OCORRENCIAS[0]!,
     id: 42,
@@ -46,6 +46,7 @@ function abrirOcorrencia(celular: string | null) {
       temCelular: celular !== null,
       celular,
     },
+    ...dados,
   };
   vi.mocked(useOcorrenciaApi).mockReturnValue({
     data: ocorrencia,
@@ -66,6 +67,42 @@ it("liga o botão da H12 à mensagem pronta da SQU-99", () => {
     "Descrição: Lâmpada queimada\nProtocolo: AUR-0042",
   );
   expect(botao.getAttribute("target")).toBe("_blank");
+});
+
+it("mostra a origem da IA e três frases com os dados da classificação sugerida", () => {
+  abrirOcorrencia(null, {
+    fonte: "ia",
+    prioridade: "normal",
+    prioridadeSugerida: "alta",
+    categoria: "manutencao",
+    responsavelSugerido: "zelador",
+    motivo: "A água escorrendo pela parede indica uma possível infiltração",
+    travada: false,
+    palavraDeRisco: null,
+  });
+
+  expect(screen.getByText("Sugerido pelo sistema (IA)")).toBeTruthy();
+  const frases = within(screen.getByRole("list")).getAllByRole("listitem");
+  expect(frases.map((frase) => frase.textContent)).toEqual([
+    "A água escorrendo pela parede indica uma possível infiltração.",
+    "A classificação sugeriu prioridade Alta na categoria Manutenção.",
+    "A sugestão de responsável pelo atendimento é Zelador.",
+  ]);
+});
+
+it("mostra a origem por regras e mantém a palavra de risco no detalhe", () => {
+  abrirOcorrencia(null, {
+    fonte: "regras",
+    travada: true,
+    palavraDeRisco: "gás",
+    motivo: "Palavra de risco: gás",
+  });
+
+  expect(screen.getByText("Classificado por regras")).toBeTruthy();
+  const frases = within(screen.getByRole("list")).getAllByRole("listitem");
+  expect(frases.map((frase) => frase.textContent)).toEqual([
+    "A prioridade sugerida foi Urgente por causa da palavra de risco “gás”.",
+  ]);
 });
 
 it("oculta o botão quando o responsável não tem celular", () => {

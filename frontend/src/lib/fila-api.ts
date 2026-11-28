@@ -35,6 +35,13 @@ type CartaoFila = {
   marcaAcao?: string | null;
 };
 
+type DetalheOcorrencia = CartaoFila & {
+  categoria?: Ocorrencia["categoria"];
+  responsavel?: Ocorrencia["responsavelSugerido"];
+  fonte?: Ocorrencia["fonte"];
+  contatoResponsavel?: unknown;
+};
+
 function mapearCartao(cartao: CartaoFila): Ocorrencia {
   const origem = cartao.origem === "whatsapp_sindico" ? "WhatsApp" : "App";
   const prioridade = cartao.prioridade ?? "normal";
@@ -82,10 +89,13 @@ export function useOcorrenciaApi(id: string, enabled: boolean) {
       });
       if (resposta.status === 404) return null;
       if (!resposta.ok) throw new Error("Não foi possível consultar a ocorrência.");
-      const dados = await resposta.json();
+      const dados: DetalheOcorrencia = await resposta.json();
       const contato = contatoResponsavelSchema.safeParse(dados.contatoResponsavel);
       return {
         ...mapearCartao(dados),
+        categoria: dados.categoria ?? null,
+        responsavelSugerido: dados.responsavel ?? null,
+        fonte: dados.fonte ?? null,
         contatoResponsavel: contato.success ? contato.data : undefined,
       };
     },
