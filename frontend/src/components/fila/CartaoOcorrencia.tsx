@@ -35,13 +35,13 @@ export function CartaoOcorrencia({
         "relative block min-h-[44px] overflow-hidden rounded-xl border bg-card py-3 pl-4 pr-3.5 shadow-card transition-all",
         "before:absolute before:inset-y-0 before:left-0",
         "hover:-translate-y-px hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        barra[ocorrencia.prioridade],
+        !ocorrencia.semClassificacao && barra[ocorrencia.prioridade],
         ocorrencia.prioridade === "urgente" ? "before:w-2" : "before:w-1",
       )}
     >
       {/* 1: priority + condo + elapsed */}
-      <div className="flex items-center gap-2">
-        <PriorityBadge prioridade={ocorrencia.prioridade} />
+      <div className="flex min-h-5 items-center gap-2">
+        {!ocorrencia.semClassificacao && <PriorityBadge prioridade={ocorrencia.prioridade} />}
         <span className="flex min-w-0 flex-1 items-center gap-1 text-xs font-medium text-muted-foreground">
           <Building2 className="size-3.5 shrink-0" aria-hidden />
           <span className="truncate">
@@ -75,8 +75,15 @@ export function CartaoOcorrencia({
         )}
       </p>
       {/* 4: short reason */}
-      <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
-        <span className="font-medium text-foreground/80">Motivo:</span> {ocorrencia.motivo}
+      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-medium text-foreground/80">Motivo:</span> {ocorrencia.motivo}
+        </span>
+        {ocorrencia.fonte === "regras" && (
+          <span className="shrink-0 border-l pl-1.5 text-xs font-medium">
+            Classificado por regras
+          </span>
+        )}
       </p>
     </Link>
   );

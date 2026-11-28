@@ -65,6 +65,7 @@ export interface Ocorrencia {
   categoria?: keyof typeof CATEGORIAS | null;
   responsavelSugerido?: string | null;
   fonte?: "ia" | "regras" | null;
+  semClassificacao?: boolean;
   travada?: boolean;
   palavraDeRisco?: string | null;
   local?: string;
@@ -246,7 +247,7 @@ export function filtrarOcorrencias(lista: Ocorrencia[], f: Filtros): Ocorrencia[
       (o) =>
         o.status === f.status &&
         (!f.condominio || o.condominioId === f.condominio) &&
-        (!f.prioridade || o.prioridade === f.prioridade),
+        (!f.prioridade || (!o.semClassificacao && o.prioridade === f.prioridade)),
     )
     .sort((a, b) => {
       if (f.status === "concluida") {
@@ -255,7 +256,8 @@ export function filtrarOcorrencias(lista: Ocorrencia[], f: Filtros): Ocorrencia[
         return dataB - dataA;
       }
       return (
-        ORDEM[a.prioridade] - ORDEM[b.prioridade] ||
+        (a.semClassificacao ? -1 : ORDEM[a.prioridade]) -
+          (b.semClassificacao ? -1 : ORDEM[b.prioridade]) ||
         (a.criadaEm && b.criadaEm
           ? Date.parse(a.criadaEm) - Date.parse(b.criadaEm)
           : b.minutosAtras - a.minutosAtras)
@@ -265,7 +267,9 @@ export function filtrarOcorrencias(lista: Ocorrencia[], f: Filtros): Ocorrencia[
 
 export function contarPorPrioridade(lista: Ocorrencia[]): Record<Prioridade, number> {
   const out: Record<Prioridade, number> = { urgente: 0, alta: 0, normal: 0, baixa: 0 };
-  for (const o of lista) out[o.prioridade]++;
+  for (const o of lista) {
+    if (!o.semClassificacao) out[o.prioridade]++;
+  }
   return out;
 }
 
